@@ -74,6 +74,7 @@ async def _scoped_connection(pool: Any, principal: ProductPrincipal):
         async with connection.transaction():
             tenant_value = str(principal.internal_tenant_id) if principal.internal_tenant_id else ""
             await connection.execute("SELECT set_config('smart_alarm.tenant_id', $1, true)", tenant_value)
+            await connection.execute("SELECT set_config('smart_alarm.system_scope', $1, true)", "true" if principal.internal_tenant_id is None else "false")
             yield connection
 
 

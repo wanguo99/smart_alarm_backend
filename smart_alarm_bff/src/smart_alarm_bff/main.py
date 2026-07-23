@@ -16,6 +16,7 @@ from . import __version__
 from .config import ConfigError, ProductionSettings
 from .infrastructure import Infrastructure
 from .directory_routes import mount_directory_routes
+from .write_routes import mount_write_routes
 from .session import SESSION_COOKIE, SessionError, SessionService, parse_bearer
 
 
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     mount_directory_routes(app, sessions, infrastructure.database)
+    mount_write_routes(app, sessions, infrastructure.database)
 
     return app
 

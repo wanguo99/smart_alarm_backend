@@ -10,7 +10,7 @@ class MigrationContractTest(unittest.TestCase):
     def test_initial_schema_covers_production_control_plane(self) -> None:
         directory = Path(__file__).resolve().parents[1] / "migrations"
         migrations = load_migrations(directory)
-        self.assertEqual([item[0] for item in migrations], ["0001_initial.sql", "0002_seed_product_roles.sql"])
+        self.assertEqual([item[0] for item in migrations], ["0001_initial.sql", "0002_seed_product_roles.sql", "0003_allow_system_scope_records.sql", "0004_system_scope_rls.sql"])
         sql = migrations[0][2]
         for table in (
             "tenants",
@@ -47,6 +47,20 @@ class MigrationContractTest(unittest.TestCase):
         seed = load_migrations(directory)[1][2]
         for role in ("SYSTEM_OPERATOR", "TENANT_OWNER", "TENANT_OPERATOR", "TENANT_VIEWER", "CUSTOMER_OPERATOR", "CUSTOMER_VIEWER"):
             self.assertIn(f"('{role}'", seed)
+
+    def test_system_scope_policy_keeps_global_records_isolated(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "migrations"
+        policy = load_migrations(directory)[2][2]
+        self.assertIn("tenant_id IS NULL", policy)
+        self.assertIn("tenant_isolation_operations", policy)
+        self.assertIn("tenant_isolation_outbox_events", policy)
+        self.assertIn("tenant_isolation_audit_events", policy)
+
+    def test_system_scope_rls_is_explicit(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "migrations"
+        policy = load_migrations(directory)[3][2]
+        self.assertIn("is_system_scope", policy)
+        self.assertIn("current_tenant_id", policy)
 
     def test_migration_names_and_checksums_are_stable(self) -> None:
         directory = Path(__file__).resolve().parents[1] / "migrations"
