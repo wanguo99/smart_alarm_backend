@@ -10,7 +10,7 @@ class MigrationContractTest(unittest.TestCase):
     def test_initial_schema_covers_production_control_plane(self) -> None:
         directory = Path(__file__).resolve().parents[1] / "migrations"
         migrations = load_migrations(directory)
-        self.assertEqual([item[0] for item in migrations], ["0001_initial.sql", "0002_seed_product_roles.sql", "0003_allow_system_scope_records.sql", "0004_system_scope_rls.sql"])
+        self.assertEqual([item[0] for item in migrations], ["0001_initial.sql", "0002_seed_product_roles.sql", "0003_allow_system_scope_records.sql", "0004_system_scope_rls.sql", "0005_device_profile_metadata.sql"])
         sql = migrations[0][2]
         for table in (
             "tenants",
@@ -61,6 +61,12 @@ class MigrationContractTest(unittest.TestCase):
         policy = load_migrations(directory)[3][2]
         self.assertIn("is_system_scope", policy)
         self.assertIn("current_tenant_id", policy)
+
+    def test_device_profile_metadata_is_persistent(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "migrations"
+        migration = load_migrations(directory)[4][2]
+        self.assertIn("profile_type", migration)
+        self.assertIn("transport_type", migration)
 
     def test_migration_names_and_checksums_are_stable(self) -> None:
         directory = Path(__file__).resolve().parents[1] / "migrations"

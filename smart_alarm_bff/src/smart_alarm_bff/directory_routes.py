@@ -235,7 +235,7 @@ def register_directory_routes(router: APIRouter, sessions: SessionService, datab
             _require(principal, "device-profiles:read")
             tenant_id, _ = _tenant_args(principal)
             async with _scoped_connection(await database(), principal) as connection:
-                rows = await connection.fetch("SELECT id, name, 'DEFAULT'::text AS type, 'MQTT'::text AS transport_type, is_default FROM smart_alarm.device_profiles WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY is_default DESC, lower(name), id", tenant_id)
+                rows = await connection.fetch("SELECT id, name, profile_type AS type, transport_type, is_default FROM smart_alarm.device_profiles WHERE tenant_id = $1 AND status = 'ACTIVE' ORDER BY is_default DESC, lower(name), id", tenant_id)
             data = [{"id": str(row["id"]), "name": row["name"], "type": row["type"], "transportType": row["transport_type"], "isDefault": row["is_default"]} for row in rows]
             return {"source": "local", **_page(data)}
         except DirectoryError as exc:

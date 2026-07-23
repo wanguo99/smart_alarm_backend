@@ -28,6 +28,20 @@ class WriteRouteContractTest(unittest.TestCase):
             "/api/v1/customers",
             "/api/v1/customers/{customer_id}",
             "/api/v1/customers/{customer_id}/archive",
+            "/api/v1/customers/{customer_id}/members",
+            "/api/v1/customers/{customer_id}/members/{member_id}",
+            "/api/v1/customers/{customer_id}/members/{member_id}/archive",
+            "/api/v1/assets",
+            "/api/v1/assets/{asset_id}",
+            "/api/v1/assets/{asset_id}/archive",
+            "/api/v1/device-profiles",
+            "/api/v1/device-profiles/{profile_id}",
+            "/api/v1/device-profiles/{profile_id}/archive",
+            "/api/v1/entity-groups",
+            "/api/v1/entity-groups/{group_id}",
+            "/api/v1/entity-groups/{group_id}/archive",
+            "/api/v1/entity-groups/{group_id}/restore",
+            "/api/v1/entity-groups/{group_id}/members",
         }.issubset(paths))
 
 
