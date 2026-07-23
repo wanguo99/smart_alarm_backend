@@ -20,8 +20,11 @@ Direct and transitive runtime dependencies are pinned in `requirements.lock`. Pr
 
 ```bash
 smart-alarm-migrate
+smart-alarm-bootstrap-system-user
 smart-alarm-bff
 ```
+
+After migrations, `smart-alarm-bootstrap-system-user` verifies an existing ThingsBoard `SYS_ADMIN` with `SMART_ALARM_BOOTSTRAP_USERNAME` and `SMART_ALARM_BOOTSTRAP_PASSWORD` (or its `_FILE` variant), then idempotently registers that immutable ThingsBoard User ID with the `SYSTEM_OPERATOR` product role. The password is used only for the verification request and is never written to PostgreSQL or printed. This bootstrap is not self-registration and does not implement SMS delivery or verification codes.
 
 The API exposes `/health`, `/ready` and loopback/protected `/metrics`, plus the initial `/api/v1/session` create/read/logout boundary. A session is created only after the presented ThingsBoard Bearer token is cross-checked against a locally registered ThingsBoard User ID, username, authority, active Product Role and mapped Tenant/Customer scope. Email is optional contact data and is not a login identity. The platform token is retained only as an AES-GCM envelope; the browser receives an HttpOnly/Secure cookie and a CSRF token. `SYS_ADMIN` deliberately has no Tenant or Customer scope; Tenant and Customer authorities must have both mappings present.
 

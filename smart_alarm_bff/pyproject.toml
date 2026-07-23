@@ -26,6 +26,7 @@ test = [
 
 [project.scripts]
 smart-alarm-bff = "smart_alarm_bff.main:run"
+smart-alarm-bootstrap-system-user = "smart_alarm_bff.bootstrap:run"
 smart-alarm-migrate = "smart_alarm_bff.migrate:run"
 
 [tool.setuptools]

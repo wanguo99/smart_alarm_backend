@@ -73,6 +73,29 @@ class ThingsBoardUserLifecycleTest(unittest.TestCase):
             f"/api/user/{USER_ID}/userCredentialsEnabled",
         ])
 
+    def test_login_accepts_phone_username_and_returns_only_access_token(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(request.url.path, "/api/auth/login")
+            self.assertEqual(
+                json.loads(request.content),
+                {"username": "+8613800138000", "password": "development-password"},
+            )
+            return httpx.Response(200, json={"token": "platform.jwt", "refreshToken": "discarded.jwt"})
+
+        token = self.execute(
+            handler,
+            lambda client: client.login("+8613800138000", "development-password"),
+        )
+        self.assertEqual(token, "platform.jwt")
+
+    def test_login_error_does_not_expose_password(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(401, text="password=development-password")
+
+        with self.assertRaisesRegex(ThingsBoardError, "invalid_platform_credentials") as raised:
+            self.execute(handler, lambda client: client.login("operator01", "development-password"))
+        self.assertNotIn("development-password", str(raised.exception))
+
     def test_activation_failure_rolls_back_platform_user(self) -> None:
         requests: list[httpx.Request] = []
 

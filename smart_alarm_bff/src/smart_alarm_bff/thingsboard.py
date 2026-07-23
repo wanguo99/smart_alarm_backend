@@ -92,6 +92,31 @@ class ThingsBoardClient:
         if self._owned:
             await self._client.aclose()
 
+    async def login(self, username: str, password: str) -> str:
+        normalized_username = normalize_username(username)
+        if not isinstance(password, str) or not password or len(password) > 1024 or "\x00" in password:
+            raise ThingsBoardError("invalid_platform_credentials", retryable=False)
+        response = await self._request(
+            "POST",
+            "/api/auth/login",
+            json={"username": normalized_username, "password": password},
+        )
+        if response.status_code in {400, 401, 403}:
+            raise ThingsBoardError("invalid_platform_credentials", retryable=False)
+        if response.status_code != 200:
+            raise ThingsBoardError(
+                "platform_login_unavailable",
+                retryable=response.status_code >= 500 or response.status_code == 429,
+            )
+        try:
+            payload = response.json()
+            token = payload.get("token") if isinstance(payload, dict) else None
+        except ValueError as exc:
+            raise ThingsBoardError("invalid_platform_login_response", retryable=False) from exc
+        if not isinstance(token, str) or not token or len(token) > 16_384 or any(char.isspace() for char in token):
+            raise ThingsBoardError("invalid_platform_login_response", retryable=False)
+        return token
+
     async def current_user(self, access_token: str) -> ThingsBoardUser:
         if not access_token or len(access_token) > 16_384 or any(char.isspace() for char in access_token):
             raise ThingsBoardError("invalid_platform_token", retryable=False)
