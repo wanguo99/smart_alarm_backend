@@ -5,7 +5,7 @@ import unittest
 try:
     from fastapi import APIRouter
     from smart_alarm_bff.policy import ProductPrincipal
-    from smart_alarm_bff.write_routes import _account_input, _account_request_hash, _audit, _body_hash, _idempotency, _outbox, register_write_routes
+    from smart_alarm_bff.write_routes import _account_input, _account_request_hash, _audit, _body_hash, _finish_operation, _idempotency, _outbox, _queue_operation, register_write_routes
 except ModuleNotFoundError as exc:
     _missing_dependency = exc.name
 else:
@@ -70,14 +70,14 @@ class WriteRouteContractTest(unittest.TestCase):
     def test_audit_and_outbox_execute_independent_inserts(self) -> None:
         class Connection:
             def __init__(self) -> None:
-                self.statements: list[str] = []
+                self.calls: list[tuple[str, tuple[object, ...]]] = []
 
             async def fetchval(self, statement: str, *_args: object) -> None:
-                self.statements.append(statement)
+                self.calls.append((statement, _args))
                 return None
 
             async def execute(self, statement: str, *_args: object) -> None:
-                self.statements.append(statement)
+                self.calls.append((statement, _args))
 
         from uuid import UUID
 
@@ -98,14 +98,39 @@ class WriteRouteContractTest(unittest.TestCase):
         import asyncio
 
         asyncio.run(_audit(connection, principal, "request-123", "TESTED", "DEVICE", "device-1", {}))
-        self.assertEqual(len(connection.statements), 3)
-        self.assertIn("pg_advisory_xact_lock", connection.statements[0])
-        self.assertIn("INSERT INTO smart_alarm.audit_events", connection.statements[2])
+        self.assertEqual(len(connection.calls), 3)
+        self.assertIn("pg_advisory_xact_lock", connection.calls[0][0])
+        self.assertIn("INSERT INTO smart_alarm.audit_events", connection.calls[2][0])
+        self.assertEqual(connection.calls[2][1][8], {})
 
-        connection.statements.clear()
-        asyncio.run(_outbox(connection, principal.internal_tenant_id, "DEVICE", "device-1", "test.requested", {}))
-        self.assertEqual(len(connection.statements), 1)
-        self.assertIn("INSERT INTO smart_alarm.outbox_events", connection.statements[0])
+        connection.calls.clear()
+        payload = {"deviceUid": "device-1"}
+        asyncio.run(_outbox(connection, principal.internal_tenant_id, "DEVICE", "device-1", "test.requested", payload))
+        self.assertEqual(len(connection.calls), 1)
+        self.assertIn("INSERT INTO smart_alarm.outbox_events", connection.calls[0][0])
+        self.assertIs(connection.calls[0][1][4], payload)
+
+    def test_operation_results_remain_json_objects_for_the_pool_codec(self) -> None:
+        class Connection:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+            async def execute(self, statement: str, *args: object) -> None:
+                self.calls.append((statement, args))
+
+        import asyncio
+        from uuid import UUID
+
+        operation_id = UUID("11111111-1111-4111-8111-111111111111")
+        result = {"status": "SUCCEEDED", "tenant": {"id": "tenant-1"}}
+        connection = Connection()
+
+        asyncio.run(_finish_operation(connection, operation_id, result, "tenant-1"))
+        asyncio.run(_queue_operation(connection, operation_id, result, "tenant-1"))
+
+        self.assertEqual(len(connection.calls), 2)
+        self.assertIs(connection.calls[0][1][1], result)
+        self.assertIs(connection.calls[1][1][1], result)
 
 
 if __name__ == "__main__":

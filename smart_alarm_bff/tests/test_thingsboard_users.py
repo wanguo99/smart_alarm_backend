@@ -55,6 +55,7 @@ class ThingsBoardUserLifecycleTest(unittest.TestCase):
                 self.assertNotIn("password", payload)
                 return httpx.Response(200, json=user_payload())
             if request.url.path.endswith("/activationLink"):
+                self.assertEqual(request.headers["Accept"], "text/plain")
                 return httpx.Response(200, text="https://tb.example.com/api/noauth/activate?activateToken=one-time-token")
             if request.url.path == "/api/noauth/activate":
                 self.assertEqual(json.loads(request.content), {"activateToken": "one-time-token", "password": "development-password"})
@@ -72,6 +73,32 @@ class ThingsBoardUserLifecycleTest(unittest.TestCase):
             "/api/user", f"/api/user/{USER_ID}/activationLink", "/api/noauth/activate",
             f"/api/user/{USER_ID}/userCredentialsEnabled",
         ])
+
+    def test_create_and_delete_tenant_use_official_platform_endpoints(self) -> None:
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            if request.method == "POST":
+                self.assertEqual(json.loads(request.content), {"title": "Tenant One", "additionalInfo": {}})
+                return httpx.Response(200, json={"id": entity(TENANT_ID, "TENANT")})
+            return httpx.Response(200)
+
+        tenant_id = self.execute(handler, lambda client: client.create_tenant("admin.jwt", name="Tenant One"))
+        self.execute(handler, lambda client: client.delete_tenant("admin.jwt", tenant_id))
+
+        self.assertEqual(tenant_id, TENANT_ID)
+        self.assertEqual(
+            [(request.method, request.url.path) for request in requests],
+            [("POST", "/api/tenant"), ("DELETE", f"/api/tenant/{TENANT_ID}")],
+        )
+
+    def test_create_tenant_rejects_invalid_platform_response(self) -> None:
+        def handler(_request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"id": {"entityType": "TENANT"}})
+
+        with self.assertRaisesRegex(ThingsBoardError, "invalid_platform_tenant_response"):
+            self.execute(handler, lambda client: client.create_tenant("admin.jwt", name="Tenant One"))
 
     def test_login_accepts_phone_username_and_returns_only_access_token(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -130,6 +157,21 @@ class ThingsBoardUserLifecycleTest(unittest.TestCase):
             ))
         self.assertEqual(requests[-1].method, "DELETE")
         self.assertEqual(requests[-1].url.path, f"/api/user/{USER_ID}")
+
+    def test_activation_failure_is_not_masked_when_compensation_fails(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/user":
+                return httpx.Response(200, json=user_payload("viewer01", "viewer@example.com"))
+            if request.url.path.endswith("/activationLink"):
+                return httpx.Response(406)
+            return httpx.Response(500)
+
+        with self.assertRaisesRegex(ThingsBoardError, "platform_activation_link_failed"):
+            self.execute(handler, lambda client: client.provision_user(
+                "admin.jwt", username="viewer01", email="viewer@example.com",
+                authority="CUSTOMER_USER", tenant_id=TENANT_ID, customer_id=CUSTOMER_ID,
+                password="development-password", enabled=True,
+            ))
 
     def test_credentials_status_and_delete_fail_closed(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:

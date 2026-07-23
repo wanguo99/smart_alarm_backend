@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any, Awaitable, Callable
 from uuid import UUID
@@ -23,6 +24,7 @@ from .thingsboard import ThingsBoardClient, ThingsBoardError, normalize_email, n
 
 
 _IDEMPOTENCY = re.compile(r"^[A-Za-z0-9._:-]{8,255}$")
+_LOGGER = logging.getLogger(__name__)
 
 
 class WriteError(RuntimeError):
@@ -129,14 +131,14 @@ async def _begin_operation(connection: Any, principal: ProductPrincipal, key: st
 async def _finish_operation(connection: Any, operation_id: UUID, result: dict[str, object], resource_id: str | None = None) -> None:
     await connection.execute(
         "UPDATE smart_alarm.operations SET state = 'SUCCEEDED', result = $2::jsonb, resource_id = $3, finished_at = clock_timestamp(), updated_at = clock_timestamp(), version = version + 1 WHERE id = $1",
-        operation_id, json.dumps(result, separators=(",", ":"), ensure_ascii=True), resource_id,
+        operation_id, result, resource_id,
     )
 
 
 async def _queue_operation(connection: Any, operation_id: UUID, result: dict[str, object], resource_id: str | None = None) -> None:
     await connection.execute(
         "UPDATE smart_alarm.operations SET state = 'QUEUED', result = $2::jsonb, resource_id = $3, updated_at = clock_timestamp(), version = version + 1 WHERE id = $1",
-        operation_id, json.dumps(result, separators=(",", ":"), ensure_ascii=True), resource_id,
+        operation_id, result, resource_id,
     )
 
 
@@ -187,14 +189,14 @@ async def _audit(connection: Any, principal: ProductPrincipal, request_id: str, 
     await connection.execute(
         "INSERT INTO smart_alarm.audit_events (tenant_id, customer_id, actor_user_id, request_id, action, resource_type, resource_id, outcome, detail, previous_hash, event_hash) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)",
         principal.internal_tenant_id, principal.internal_customer_id, principal.local_user_id, request_id, action, resource_type, resource_id,
-        outcome, json.dumps(detail, separators=(",", ":"), ensure_ascii=True), previous, event_hash,
+        outcome, detail, previous, event_hash,
     )
 
 
 async def _outbox(connection: Any, tenant_id: UUID | None, aggregate_type: str, aggregate_id: str, event_type: str, payload: dict[str, object]) -> None:
     await connection.execute(
         "INSERT INTO smart_alarm.outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload) VALUES ($1, $2, $3, $4, $5::jsonb)",
-        tenant_id, aggregate_type, aggregate_id, event_type, json.dumps(payload, separators=(",", ":"), ensure_ascii=True),
+        tenant_id, aggregate_type, aggregate_id, event_type, payload,
     )
 
 
@@ -227,18 +229,44 @@ def register_write_routes(
     async def create_tenant(request: Request, body: dict[str, object]):
         try:
             principal = await _guard(request, sessions, database, "system:tenants:write")
+            context, platform = _platform_context(request, thingsboard)
             name = _name(body)
             key = _idempotency(request)
             async with _scoped_connection(await database(), principal) as connection:
                 operation_id, replay = await _begin_operation(connection, principal, key, "tenant-create", "TENANT", _body_hash(body))
                 if replay is not None:
                     return replay
-                row = await connection.fetchrow("INSERT INTO smart_alarm.tenants (name) VALUES ($1) RETURNING id, name", name)
-                result = {"operationId": str(operation_id), "kind": "system-tenant-create", "status": "SUCCEEDED", "tenant": {"id": str(row["id"]), "name": row["name"]}}
-                await _finish_operation(connection, operation_id, result, str(row["id"]))
-                await _audit(connection, principal, key, "TENANT_CREATED", "TENANT", str(row["id"]), {"name": name})
-            return result
-        except WriteError as exc:
+            try:
+                platform_tenant_id = await platform.create_tenant(context.platform_token, name=name)
+            except ThingsBoardError as exc:
+                await _fail_operation(database, principal, operation_id, exc.code)
+                raise _platform_write_error(exc) from exc
+            try:
+                async with _scoped_connection(await database(), principal) as connection:
+                    row = await connection.fetchrow(
+                        "INSERT INTO smart_alarm.tenants (thingsboard_tenant_id, name) VALUES ($1, $2) RETURNING id, name, thingsboard_tenant_id",
+                        platform_tenant_id, name,
+                    )
+                    result = {"operationId": str(operation_id), "kind": "system-tenant-create", "status": "SUCCEEDED", "tenant": {"id": str(row["id"]), "name": row["name"], "thingsboardTenantId": str(row["thingsboard_tenant_id"])}}
+                    await _finish_operation(connection, operation_id, result, str(row["id"]))
+                    await _audit(connection, principal, key, "TENANT_CREATED", "TENANT", str(row["id"]), {"name": name, "thingsboardTenantId": str(platform_tenant_id)})
+                return result
+            except Exception as exc:
+                _LOGGER.exception(
+                    "failed to persist ThingsBoard tenant %s in the product directory",
+                    platform_tenant_id,
+                )
+                try:
+                    await platform.delete_tenant(context.platform_token, platform_tenant_id, missing_ok=True)
+                except ThingsBoardError:
+                    pass
+                await _fail_operation(database, principal, operation_id, "local_tenant_persist_failed")
+                if isinstance(exc, WriteError):
+                    raise
+                raise WriteError("local_tenant_persist_failed", 503) from exc
+        except (WriteError, ThingsBoardError) as exc:
+            if isinstance(exc, ThingsBoardError):
+                return _write_error(_platform_write_error(exc))
             return _write_error(exc)
 
     @router.patch("/api/v1/system/tenants/{tenant_id}")

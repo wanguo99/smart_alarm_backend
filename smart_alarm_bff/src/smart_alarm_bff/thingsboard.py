@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -21,6 +22,7 @@ class ThingsBoardError(RuntimeError):
 
 _USERNAME_PATTERN = re.compile(r"^(?:[a-z0-9][a-z0-9._@-]{1,62}[a-z0-9]|\+[0-9]{3,63})$")
 THINGSBOARD_NULL_UUID = UUID("13814000-1dd2-11b2-8080-808080808080")
+_LOGGER = logging.getLogger(__name__)
 
 
 def normalize_username(value: object) -> str:
@@ -137,6 +139,32 @@ class ThingsBoardClient:
         except (ValueError, PolicyError) as exc:
             raise ThingsBoardError("invalid_platform_identity_response", retryable=False) from exc
 
+    async def create_tenant(self, access_token: str, *, name: str) -> UUID:
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 255 or name != name.strip():
+            raise ThingsBoardError("invalid_platform_tenant_name", retryable=False)
+        response = await self._authorized(
+            "POST", "/api/tenant", access_token,
+            json={"title": name, "additionalInfo": {}},
+        )
+        if response.status_code not in {200, 201}:
+            raise ThingsBoardError("platform_tenant_create_failed", retryable=response.status_code >= 500 or response.status_code == 429)
+        try:
+            payload = response.json()
+            entity = payload.get("id") if isinstance(payload, dict) else None
+            raw_id = entity.get("id") if isinstance(entity, dict) else entity
+            tenant_id = UUID(raw_id) if isinstance(raw_id, str) else None
+        except (ValueError, TypeError):
+            tenant_id = None
+        if tenant_id is None:
+            raise ThingsBoardError("invalid_platform_tenant_response", retryable=False)
+        return tenant_id
+
+    async def delete_tenant(self, access_token: str, tenant_id: UUID, *, missing_ok: bool = False) -> None:
+        response = await self._authorized("DELETE", f"/api/tenant/{tenant_id}", access_token)
+        expected = {200, 404} if missing_ok else {200}
+        if response.status_code not in expected:
+            raise ThingsBoardError("platform_tenant_delete_failed", retryable=response.status_code >= 500 or response.status_code == 429)
+
     async def provision_user(
         self,
         access_token: str,
@@ -177,11 +205,15 @@ class ThingsBoardClient:
             or user.tenant_id != tenant_id
             or user.customer_id != customer_id
         ):
-            await self.delete_user(access_token, user.user_id, missing_ok=True)
+            try:
+                await self.delete_user(access_token, user.user_id, missing_ok=True)
+            except ThingsBoardError:
+                _LOGGER.exception("failed to compensate invalid ThingsBoard user %s", user.user_id)
             raise ThingsBoardError("invalid_platform_user_scope", retryable=False)
         try:
             activation = await self._authorized(
                 "GET", f"/api/user/{user.user_id}/activationLink", access_token,
+                accept="text/plain",
             )
             if activation.status_code != 200:
                 raise ThingsBoardError("platform_activation_link_failed", retryable=activation.status_code >= 500 or activation.status_code == 429)
@@ -195,7 +227,10 @@ class ThingsBoardClient:
             if not enabled:
                 await self.set_user_enabled(access_token, user.user_id, False)
         except Exception:
-            await self.delete_user(access_token, user.user_id, missing_ok=True)
+            try:
+                await self.delete_user(access_token, user.user_id, missing_ok=True)
+            except ThingsBoardError:
+                _LOGGER.exception("failed to compensate unactivated ThingsBoard user %s", user.user_id)
             raise
         return user
 
@@ -213,12 +248,20 @@ class ThingsBoardClient:
         if response.status_code not in expected:
             raise ThingsBoardError("platform_user_delete_failed", retryable=response.status_code >= 500 or response.status_code == 429)
 
-    async def _authorized(self, method: str, path: str, access_token: str, **kwargs: object) -> httpx.Response:
+    async def _authorized(
+        self,
+        method: str,
+        path: str,
+        access_token: str,
+        *,
+        accept: str = "application/json",
+        **kwargs: object,
+    ) -> httpx.Response:
         if not access_token or len(access_token) > 16_384 or any(char.isspace() for char in access_token):
             raise ThingsBoardError("invalid_platform_token", retryable=False)
         response = await self._request(
             method, path,
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            headers={"Authorization": f"Bearer {access_token}", "Accept": accept},
             **kwargs,
         )
         if response.status_code in {401, 403}:
