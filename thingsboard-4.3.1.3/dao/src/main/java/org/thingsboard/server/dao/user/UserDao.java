@@ -40,6 +40,14 @@ public interface UserDao extends Dao<User>, TenantEntityDao<User> {
     User save(TenantId tenantId, User user);
 
     /**
+     * Find user by globally unique username.
+     *
+     * @param username the normalized username
+     * @return the user entity
+     */
+    User findByUsername(TenantId tenantId, String username);
+
+    /**
      * Find user by email.
      *
      * @param email the email

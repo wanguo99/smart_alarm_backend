@@ -92,6 +92,23 @@ public class JpaUserDaoTest extends AbstractJpaDaoTest {
     }
 
     @Test
+    public void testFindByUsername() {
+        User user = new User();
+        user.setId(new UserId(UUID.randomUUID()));
+        user.setTenantId(TenantId.fromUUID(UUID.randomUUID()));
+        user.setCustomerId(new CustomerId(UUID.randomUUID()));
+        user.setUsername("warehouse-operator");
+        user.setEmail("warehouse@example.com");
+        User savedUser = userDao.save(AbstractServiceTest.SYSTEM_TENANT_ID, user);
+
+        User foundUser = userDao.findByUsername(AbstractServiceTest.SYSTEM_TENANT_ID, "warehouse-operator");
+
+        assertNotNull(foundUser);
+        assertEquals("warehouse-operator", foundUser.getUsername());
+        userDao.removeById(savedUser.getTenantId(), savedUser.getUuidId());
+    }
+
+    @Test
     public void testFindTenantAdmins() {
         PageLink pageLink = new PageLink(20);
         PageData<User> tenantAdmins1 = userDao.findTenantAdmins(tenantId, pageLink);

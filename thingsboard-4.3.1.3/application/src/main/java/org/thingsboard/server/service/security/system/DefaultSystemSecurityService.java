@@ -127,7 +127,7 @@ public class DefaultSystemSecurityService implements SystemSecurityService {
                 && failedVerificationAttempts >= maxVerificationFailures) {
             userService.setUserCredentialsEnabled(TenantId.SYS_TENANT_ID, userId, false);
             SecuritySettings securitySettings = securitySettingsService.getSecuritySettings();
-            lockAccount(userId, securityUser.getEmail(), securitySettings.getUserLockoutNotificationEmail(), maxVerificationFailures);
+            lockAccount(userId, securityUser.getUsername(), securitySettings.getUserLockoutNotificationEmail(), maxVerificationFailures);
             throw new LockedException("User account was locked due to exceeded 2FA verification attempts");
         }
     }

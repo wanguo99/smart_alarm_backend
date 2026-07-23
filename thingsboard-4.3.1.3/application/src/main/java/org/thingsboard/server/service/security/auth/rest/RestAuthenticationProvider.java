@@ -110,7 +110,7 @@ public class RestAuthenticationProvider extends AbstractAuthenticationProvider {
     }
 
     private SecurityUser authenticateByUsernameAndPassword(Authentication authentication, UserPrincipal userPrincipal, String username, String password) {
-        User user = userService.findUserByEmail(TenantId.SYS_TENANT_ID, username);
+        User user = userService.findUserByUsername(TenantId.SYS_TENANT_ID, username);
         if (user == null) {
             throw new UsernameNotFoundException("User not found: " + username);
         }
@@ -132,7 +132,8 @@ public class RestAuthenticationProvider extends AbstractAuthenticationProvider {
                 throw new InsufficientAuthenticationException("User has no authority assigned");
             }
 
-            return new SecurityUser(user, userCredentials.isEnabled(), userPrincipal);
+            UserPrincipal normalizedPrincipal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getUsername());
+            return new SecurityUser(user, userCredentials.isEnabled(), normalizedPrincipal);
         } catch (Exception e) {
             systemSecurityService.logLoginAction(user, authentication.getDetails(), ActionType.LOGIN, e);
             throw e;

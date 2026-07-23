@@ -33,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.thingsboard.rule.engine.api.MailService;
 import org.thingsboard.server.cache.limits.RateLimitService;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.audit.ActionType;
 import org.thingsboard.server.common.data.exception.ThingsboardErrorCode;
@@ -210,14 +211,14 @@ public class AuthController extends BaseController {
         String encodedPassword = passwordEncoder.encode(password);
         UserCredentials credentials = userService.activateUserCredentials(TenantId.SYS_TENANT_ID, activateToken, encodedPassword);
         User user = userService.findUserById(TenantId.SYS_TENANT_ID, credentials.getUserId());
-        UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getEmail());
+        UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getUsername());
         SecurityUser securityUser = new SecurityUser(user, credentials.isEnabled(), principal);
         userService.setUserCredentialsEnabled(user.getTenantId(), user.getId(), true);
         String baseUrl = systemSecurityService.getBaseUrl(user.getTenantId(), user.getCustomerId(), request);
         String loginUrl = String.format("%s/login", baseUrl);
         String email = user.getEmail();
 
-        if (sendActivationMail) {
+        if (sendActivationMail && StringUtils.isNotEmpty(email)) {
             try {
                 mailService.sendAccountActivatedEmail(loginUrl, email);
             } catch (Exception e) {
@@ -260,7 +261,7 @@ public class AuthController extends BaseController {
             userCredentials.setResetTokenExpTime(null);
             userCredentials = userService.replaceUserCredentials(TenantId.SYS_TENANT_ID, userCredentials);
             User user = userService.findUserById(TenantId.SYS_TENANT_ID, userCredentials.getUserId());
-            UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getEmail());
+            UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getUsername());
             SecurityUser securityUser = new SecurityUser(user, userCredentials.isEnabled(), principal);
             String baseUrl = systemSecurityService.getBaseUrl(user.getTenantId(), user.getCustomerId(), request);
             String loginUrl = String.format("%s/login", baseUrl);

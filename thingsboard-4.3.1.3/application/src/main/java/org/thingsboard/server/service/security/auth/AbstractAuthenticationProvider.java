@@ -64,6 +64,7 @@ public abstract class AbstractAuthenticationProvider implements AuthenticationPr
         User user = new User(new UserId(EntityId.NULL_UUID));
         user.setTenantId(publicCustomer.getTenantId());
         user.setCustomerId(publicCustomer.getId());
+        user.setUsername(publicId);
         user.setEmail(publicId);
         user.setAuthority(Authority.CUSTOMER_USER);
         user.setFirstName("Public");
@@ -88,7 +89,7 @@ public abstract class AbstractAuthenticationProvider implements AuthenticationPr
             throw new InsufficientAuthenticationException("User has no authority assigned");
         }
 
-        UserPrincipal userPrincipal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getEmail());
+        UserPrincipal userPrincipal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getUsername());
         return new SecurityUser(user, true, userPrincipal);
     }
 

@@ -93,8 +93,6 @@ public abstract class AbstractOAuth2ClientMapper {
 
         OAuth2MapperConfig config = oAuth2Client.getMapperConfig();
 
-        UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, oauth2User.getEmail());
-
         User user = userService.findUserByEmail(TenantId.SYS_TENANT_ID, oauth2User.getEmail());
 
         if (user == null && !config.isAllowUserCreation()) {
@@ -117,6 +115,7 @@ public abstract class AbstractOAuth2ClientMapper {
                     CustomerId customerId = oauth2User.getCustomerId() != null ?
                             oauth2User.getCustomerId() : getCustomerId(user.getTenantId(), oauth2User.getCustomerName());
                     user.setCustomerId(customerId);
+                    user.setUsername(oauth2User.getEmail());
                     user.setEmail(oauth2User.getEmail());
                     user.setFirstName(oauth2User.getFirstName());
                     user.setLastName(oauth2User.getLastName());
@@ -156,6 +155,7 @@ public abstract class AbstractOAuth2ClientMapper {
         }
 
         try {
+            UserPrincipal principal = new UserPrincipal(UserPrincipal.Type.USER_NAME, user.getUsername());
             SecurityUser securityUser = new SecurityUser(user, true, principal);
             return (SecurityUser) new UsernamePasswordAuthenticationToken(securityUser, null, securityUser.getAuthorities()).getPrincipal();
         } catch (Exception e) {

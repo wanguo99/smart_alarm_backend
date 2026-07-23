@@ -56,7 +56,7 @@ public class TotpTwoFaProvider implements TwoFaProvider<TotpTwoFaProviderConfig,
                 .setScheme("otpauth")
                 .setHost("totp")
                 .setParameter("issuer", providerConfig.getIssuerName())
-                .setPath("/" + providerConfig.getIssuerName() + ":" + user.getEmail())
+                .setPath("/" + providerConfig.getIssuerName() + ":" + user.getUsername())
                 .setParameter("secret", secretKey);
         return uri.build().toASCIIString();
     }

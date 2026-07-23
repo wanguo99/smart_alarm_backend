@@ -36,6 +36,7 @@ import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.UserAuthDetails;
+import org.thingsboard.server.common.data.UsernameUtils;
 import org.thingsboard.server.common.data.audit.ActionType;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.EntityId;
@@ -123,11 +124,22 @@ public class UserServiceImpl extends AbstractCachedEntityService<UserCacheKey, U
     @TransactionalEventListener
     public void handleEvictEvent(UserCacheEvictEvent event) {
         List<UserCacheKey> keys = new ArrayList<>(2);
-        keys.add(new UserCacheKey(event.tenantId(), event.newEmail()));
+        if (StringUtils.isNotEmpty(event.newEmail())) {
+            keys.add(new UserCacheKey(event.tenantId(), event.newEmail()));
+        }
         if (StringUtils.isNotEmpty(event.oldEmail()) && !event.oldEmail().equals(event.newEmail())) {
             keys.add(new UserCacheKey(event.tenantId(), event.oldEmail()));
         }
-        cache.evict(keys);
+        if (!keys.isEmpty()) {
+            cache.evict(keys);
+        }
+    }
+
+    @Override
+    public User findUserByUsername(TenantId tenantId, String username) {
+        log.trace("Executing findUserByUsername [{}]", username);
+        validateString(username, value -> "Incorrect username " + value);
+        return userDao.findByUsername(tenantId, UsernameUtils.normalize(username));
     }
 
     @Override
@@ -186,13 +198,18 @@ public class UserServiceImpl extends AbstractCachedEntityService<UserCacheKey, U
 
     private User doSaveUser(TenantId tenantId, User user, boolean doValidate) {
         log.trace("Executing saveUser [{}]", user);
+        user.setEmail(StringUtils.trimToNull(user.getEmail()));
+        if (StringUtils.isBlank(user.getUsername())) {
+            user.setUsername(user.getEmail());
+        }
+        user.setUsername(UsernameUtils.normalize(user.getUsername()));
         User oldUser = null;
         if (doValidate) {
             oldUser = userValidator.validate(user, User::getTenantId);
         } else if (user.getId() != null) {
             oldUser = findUserById(user.getTenantId(), user.getId());
         }
-        if (!userLoginCaseSensitive) {
+        if (!userLoginCaseSensitive && StringUtils.isNotEmpty(user.getEmail())) {
             user.setEmail(user.getEmail().toLowerCase());
         }
         var evictEvent = new UserCacheEvictEvent(user.getTenantId(), user.getEmail(), oldUser != null ? oldUser.getEmail() : null);
@@ -217,6 +234,7 @@ public class UserServiceImpl extends AbstractCachedEntityService<UserCacheKey, U
                     .created(user.getId() == null).build());
         } catch (Exception t) {
             handleEvictEvent(evictEvent);
+            checkConstraintViolation(t, "tb_user_username_key", "User with username '" + user.getUsername() + "' already present in database!");
             checkConstraintViolation(t, "tb_user_email_key", "User with email '" + user.getEmail() + "' already present in database!");
             throw t;
         }

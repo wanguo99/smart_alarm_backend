@@ -439,12 +439,17 @@ CREATE TABLE IF NOT EXISTS tb_user (
     additional_info varchar,
     authority varchar(255),
     customer_id uuid,
+    username varchar(64) NOT NULL,
     email varchar(255) UNIQUE,
     first_name varchar(255),
     last_name varchar(255),
     phone varchar(255),
     tenant_id uuid,
-    version BIGINT DEFAULT 1
+    version BIGINT DEFAULT 1,
+    CONSTRAINT tb_user_username_key UNIQUE (username),
+    CONSTRAINT tb_user_username_format_chk CHECK (
+        username ~ '^([a-z0-9][a-z0-9._@-]{1,62}[a-z0-9]|\+[0-9]{3,63})$'
+    )
 );
 
 CREATE TABLE IF NOT EXISTS tenant_profile (

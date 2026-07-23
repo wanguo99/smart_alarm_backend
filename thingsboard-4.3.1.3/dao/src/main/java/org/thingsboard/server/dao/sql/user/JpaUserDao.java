@@ -62,6 +62,11 @@ public class JpaUserDao extends JpaAbstractDao<UserEntity, User> implements User
     }
 
     @Override
+    public User findByUsername(TenantId tenantId, String username) {
+        return DaoUtil.getData(userRepository.findByUsername(username));
+    }
+
+    @Override
     public User findByEmail(TenantId tenantId, String email) {
         return DaoUtil.getData(userRepository.findByEmail(email));
     }

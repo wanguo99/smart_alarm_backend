@@ -63,6 +63,7 @@ public class JwtTokenFactory {
 
     private static final String SCOPES = "scopes";
     private static final String USER_ID = "userId";
+    private static final String EMAIL = "email";
     private static final String FIRST_NAME = "firstName";
     private static final String LAST_NAME = "lastName";
     private static final String ENABLED = "enabled";
@@ -91,6 +92,7 @@ public class JwtTokenFactory {
                 .map(GrantedAuthority::getAuthority).collect(Collectors.toList()), jwtSettingsService.getJwtSettings().getTokenExpirationTime());
         jwtBuilder.claim(FIRST_NAME, securityUser.getFirstName())
                 .claim(LAST_NAME, securityUser.getLastName())
+                .claim(EMAIL, securityUser.getEmail())
                 .claim(ENABLED, securityUser.isEnabled())
                 .claim(IS_PUBLIC, principal.getType() == UserPrincipal.Type.PUBLIC_ID);
         if (securityUser.getTenantId() != null) {
@@ -118,7 +120,8 @@ public class JwtTokenFactory {
         Authority authority = Authority.parse(scopes.get(0));
 
         SecurityUser securityUser = new SecurityUser(new UserId(UUID.fromString(claims.get(USER_ID, String.class))));
-        securityUser.setEmail(subject);
+        securityUser.setUsername(subject);
+        securityUser.setEmail(claims.get(EMAIL, String.class));
         securityUser.setAuthority(authority);
         String tenantId = claims.get(TENANT_ID, String.class);
 
@@ -194,8 +197,8 @@ public class JwtTokenFactory {
     }
 
     private JwtBuilder setUpToken(SecurityUser securityUser, List<String> scopes, long expirationTime) {
-        if (StringUtils.isBlank(securityUser.getEmail())) {
-            throw new IllegalArgumentException("Cannot create JWT Token without username/email");
+        if (StringUtils.isBlank(securityUser.getUsername())) {
+            throw new IllegalArgumentException("Cannot create JWT Token without username");
         }
 
         UserPrincipal principal = securityUser.getUserPrincipal();

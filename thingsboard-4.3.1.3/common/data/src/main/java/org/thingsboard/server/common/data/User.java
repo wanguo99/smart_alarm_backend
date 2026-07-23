@@ -41,6 +41,7 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
 
     private TenantId tenantId;
     private CustomerId customerId;
+    private String username;
     private String email;
     private Authority authority;
     @NoXss
@@ -67,6 +68,7 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
         super(user);
         this.tenantId = user.getTenantId();
         this.customerId = user.getCustomerId();
+        this.username = user.getUsername();
         this.email = user.getEmail();
         this.authority = user.getAuthority();
         this.firstName = user.getFirstName();
@@ -109,7 +111,16 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
         this.customerId = customerId;
     }
 
-    @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Email of the user", example = "user@example.com")
+    @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Unique username used to sign in", example = "operator01")
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    @Schema(description = "Optional contact email of the user", example = "user@example.com")
     public String getEmail() {
         return email;
     }
@@ -118,11 +129,11 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
         this.email = email;
     }
 
-    @Schema(accessMode = Schema.AccessMode.READ_ONLY, description = "Duplicates the email of the user, readonly", example = "user@example.com")
+    @Schema(accessMode = Schema.AccessMode.READ_ONLY, description = "Duplicates the username of the user, readonly", example = "operator01")
     @Override
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     public String getName() {
-        return email;
+        return username;
     }
 
     @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Authority", example = "SYS_ADMIN, TENANT_ADMIN or CUSTOMER_USER")
@@ -178,10 +189,10 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
 
     @JsonIgnore
     public String getTitle() {
-        return getTitle(email, firstName, lastName);
+        return getTitle(username, firstName, lastName);
     }
 
-    public static String getTitle(String email, String firstName, String lastName) {
+    public static String getTitle(String username, String firstName, String lastName) {
         String title = "";
         if (isNotEmpty(firstName)) {
             title += firstName;
@@ -193,7 +204,7 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
             title += lastName;
         }
         if (title.isEmpty()) {
-            title = email;
+            title = username;
         }
         return title;
     }
@@ -205,6 +216,8 @@ public class User extends BaseDataWithAdditionalInfo<UserId> implements HasName,
         builder.append(tenantId);
         builder.append(", customerId=");
         builder.append(customerId);
+        builder.append(", username=");
+        builder.append(username);
         builder.append(", email=");
         builder.append(email);
         builder.append(", authority=");

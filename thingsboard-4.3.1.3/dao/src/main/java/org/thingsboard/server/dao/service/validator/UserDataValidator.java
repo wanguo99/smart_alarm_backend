@@ -22,6 +22,7 @@ import org.thingsboard.server.common.data.Customer;
 import org.thingsboard.server.common.data.EntityType;
 import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.User;
+import org.thingsboard.server.common.data.UsernameUtils;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.security.Authority;
@@ -77,11 +78,19 @@ public class UserDataValidator extends DataValidator<User> {
 
     @Override
     protected void validateDataImpl(TenantId requestTenantId, User user) {
-        if (StringUtils.isEmpty(user.getEmail())) {
-            throw new DataValidationException("User email should be specified!");
+        if (StringUtils.isEmpty(user.getUsername()) && StringUtils.isNotEmpty(user.getEmail())) {
+            user.setUsername(UsernameUtils.normalize(user.getEmail()));
         }
-
-        validateEmail(user.getEmail());
+        if (StringUtils.isEmpty(user.getUsername())) {
+            throw new DataValidationException("Username should be specified!");
+        }
+        if (!UsernameUtils.isValid(user.getUsername())) {
+            throw new DataValidationException("Username must be 3-64 characters, start and end with a letter or digit, " +
+                    "and contain only letters, digits, '.', '_', '@' or '-'. An E.164 phone number may start with '+'.");
+        }
+        if (StringUtils.isNotEmpty(user.getEmail())) {
+            validateEmail(user.getEmail());
+        }
 
         Authority authority = user.getAuthority();
         if (authority == null) {

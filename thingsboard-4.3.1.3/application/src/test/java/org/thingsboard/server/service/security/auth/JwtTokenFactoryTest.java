@@ -78,6 +78,7 @@ public class JwtTokenFactoryTest {
         testCreateAndParseAccessJwtToken(securityUser);
 
         securityUser = new SecurityUser(securityUser, true, new UserPrincipal(UserPrincipal.Type.PUBLIC_ID, securityUser.getEmail()));
+        securityUser.setUsername(securityUser.getEmail());
         securityUser.setFirstName(null);
         securityUser.setLastName(null);
         securityUser.setCustomerId(null);
@@ -91,6 +92,7 @@ public class JwtTokenFactoryTest {
 
         SecurityUser parsedSecurityUser = tokenFactory.parseAccessJwtToken(accessToken.token());
         assertThat(parsedSecurityUser.getId()).isEqualTo(securityUser.getId());
+        assertThat(parsedSecurityUser.getUsername()).isEqualTo(securityUser.getUsername());
         assertThat(parsedSecurityUser.getEmail()).isEqualTo(securityUser.getEmail());
         assertThat(parsedSecurityUser.getUserPrincipal()).matches(userPrincipal -> {
             return userPrincipal.getType().equals(securityUser.getUserPrincipal().getType())
@@ -156,13 +158,14 @@ public class JwtTokenFactoryTest {
     private SecurityUser createSecurityUser() {
         SecurityUser securityUser = new SecurityUser();
         securityUser.setId(new UserId(UUID.randomUUID()));
+        securityUser.setUsername("operator01");
         securityUser.setEmail("tenant@thingsboard.org");
         securityUser.setAuthority(Authority.TENANT_ADMIN);
         securityUser.setTenantId(TenantId.fromUUID(UUID.randomUUID()));
         securityUser.setEnabled(true);
         securityUser.setFirstName("A");
         securityUser.setLastName("B");
-        securityUser.setUserPrincipal(new UserPrincipal(UserPrincipal.Type.USER_NAME, securityUser.getEmail()));
+        securityUser.setUserPrincipal(new UserPrincipal(UserPrincipal.Type.USER_NAME, securityUser.getUsername()));
         securityUser.setCustomerId(new CustomerId(UUID.randomUUID()));
         return securityUser;
     }

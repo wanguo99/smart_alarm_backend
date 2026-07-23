@@ -66,6 +66,7 @@ public class ModelConstants {
     public static final String USER_PG_HIBERNATE_TABLE_NAME = "tb_user";
     public static final String USER_TENANT_ID_PROPERTY = TENANT_ID_PROPERTY;
     public static final String USER_CUSTOMER_ID_PROPERTY = CUSTOMER_ID_PROPERTY;
+    public static final String USER_USERNAME_PROPERTY = "username";
     public static final String USER_EMAIL_PROPERTY = "email";
     public static final String USER_AUTHORITY_PROPERTY = "authority";
     public static final String USER_FIRST_NAME_PROPERTY = "first_name";

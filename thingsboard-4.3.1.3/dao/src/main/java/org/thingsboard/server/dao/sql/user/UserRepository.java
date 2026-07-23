@@ -32,13 +32,16 @@ import java.util.UUID;
 
 public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
+    UserEntity findByUsername(String username);
+
     UserEntity findByEmail(String email);
 
     UserEntity findByTenantIdAndEmail(UUID tenantId, String email);
 
     @Query("SELECT u FROM UserEntity u WHERE u.tenantId = :tenantId " +
             "AND u.customerId = :customerId AND u.authority = :authority " +
-            "AND (:searchText IS NULL OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
+            "AND (:searchText IS NULL OR ilike(u.username, CONCAT('%', :searchText, '%')) = true " +
+            "OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
     Page<UserEntity> findUsersByAuthority(@Param("tenantId") UUID tenantId,
                                           @Param("customerId") UUID customerId,
                                           @Param("searchText") String searchText,
@@ -47,14 +50,16 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
     @Query("SELECT u FROM UserEntity u WHERE u.tenantId = :tenantId " +
             "AND u.customerId IN (:customerIds) " +
-            "AND (:searchText IS NULL OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
+            "AND (:searchText IS NULL OR ilike(u.username, CONCAT('%', :searchText, '%')) = true " +
+            "OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
     Page<UserEntity> findTenantAndCustomerUsers(@Param("tenantId") UUID tenantId,
                                                 @Param("customerIds") Collection<UUID> customerIds,
                                                 @Param("searchText") String searchText,
                                                 Pageable pageable);
 
     @Query("SELECT u FROM UserEntity u WHERE u.tenantId = :tenantId " +
-            "AND (:searchText IS NULL OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
+            "AND (:searchText IS NULL OR ilike(u.username, CONCAT('%', :searchText, '%')) = true " +
+            "OR ilike(u.email, CONCAT('%', :searchText, '%')) = true)")
     Page<UserEntity> findByTenantId(@Param("tenantId") UUID tenantId,
                                     @Param("searchText") String searchText,
                                     Pageable pageable);
@@ -73,7 +78,7 @@ public interface UserRepository extends JpaRepository<UserEntity, UUID> {
     Long countByTenantId(UUID tenantId);
 
     @Query("SELECT new org.thingsboard.server.common.data.edqs.fields.UserFields(u.id, u.createdTime, u.tenantId," +
-            "u.customerId, u.version, u.firstName, u.lastName, u.email, u.phone, u.additionalInfo) " +
+            "u.customerId, u.version, u.username, u.firstName, u.lastName, u.email, u.phone, u.additionalInfo) " +
             "FROM UserEntity u WHERE u.id > :id ORDER BY u.id")
     List<UserFields> findNextBatch(@Param("id") UUID id, Limit limit);
 

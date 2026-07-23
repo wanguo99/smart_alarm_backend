@@ -91,6 +91,15 @@ public class UserServiceTest extends AbstractServiceTest {
     }
 
     @Test
+    public void testFindUserByUsername() {
+        User user = userService.findUserByUsername(SYSTEM_TENANT_ID, "SYSADMIN@THINGSBOARD.ORG");
+        Assert.assertNotNull(user);
+        Assert.assertEquals("sysadmin@thingsboard.org", user.getUsername());
+        Assert.assertEquals(Authority.SYS_ADMIN, user.getAuthority());
+        Assert.assertNull(userService.findUserByUsername(SYSTEM_TENANT_ID, "missing-user"));
+    }
+
+    @Test
     public void testFindUserByTenantIdAndEmail() {
         User user = userService.findUserByTenantIdAndEmail(SYSTEM_TENANT_ID, "sysadmin@thingsboard.org");
         Assert.assertNotNull(user);
@@ -172,12 +181,47 @@ public class UserServiceTest extends AbstractServiceTest {
     }
 
     @Test
-    public void testSaveUserWithEmptyEmail() {
+    public void testSaveUserWithUsernameAndNoEmail() {
         User tenantAdminUser = userService.findUserByEmail(tenantId, "tenant@thingsboard.org");
-        tenantAdminUser.setEmail(null);
+        User user = new User();
+        user.setAuthority(Authority.TENANT_ADMIN);
+        user.setTenantId(tenantAdminUser.getTenantId());
+        user.setUsername("Operator_01");
+
+        User savedUser = userService.saveUser(tenantId, user);
+
+        Assert.assertEquals("operator_01", savedUser.getUsername());
+        Assert.assertNull(savedUser.getEmail());
+        Assert.assertEquals(savedUser, userService.findUserByUsername(tenantId, "OPERATOR_01"));
+
+        User userWithBlankEmail = new User();
+        userWithBlankEmail.setAuthority(Authority.TENANT_ADMIN);
+        userWithBlankEmail.setTenantId(tenantAdminUser.getTenantId());
+        userWithBlankEmail.setUsername("operator_02");
+        userWithBlankEmail.setEmail("   ");
+        User savedUserWithBlankEmail = userService.saveUser(tenantId, userWithBlankEmail);
+        Assert.assertNull(savedUserWithBlankEmail.getEmail());
+
+        userService.deleteUser(tenantId, savedUser);
+        userService.deleteUser(tenantId, savedUserWithBlankEmail);
+    }
+
+    @Test
+    public void testSaveUserWithInvalidUsername() {
+        User tenantAdminUser = userService.findUserByEmail(tenantId, "tenant@thingsboard.org");
+        tenantAdminUser.setUsername("invalid username");
         Assertions.assertThatThrownBy(() -> userService.saveUser(tenantId, tenantAdminUser))
                 .isInstanceOf(DataValidationException.class)
-                .hasMessage("User email should be specified!");
+                .hasMessageStartingWith("Username must be 3-64 characters");
+    }
+
+    @Test
+    public void testSaveUserWithSameUsername() {
+        User tenantAdminUser = userService.findUserByEmail(tenantId, "tenant@thingsboard.org");
+        tenantAdminUser.setUsername("sysadmin@thingsboard.org");
+        Assertions.assertThatThrownBy(() -> userService.saveUser(tenantId, tenantAdminUser))
+                .isInstanceOf(DataValidationException.class)
+                .hasMessage("User with username 'sysadmin@thingsboard.org' already present in database!");
     }
 
     @Test

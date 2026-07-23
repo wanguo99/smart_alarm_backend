@@ -29,6 +29,7 @@ import static org.thingsboard.server.common.data.edqs.fields.FieldsUtil.getText;
 @SuperBuilder
 public class UserFields extends AbstractEntityFields {
 
+    private String username;
     private String firstName;
     private String lastName;
     private String email;
@@ -37,13 +38,14 @@ public class UserFields extends AbstractEntityFields {
 
     @Override
     public String getName() {
-        return getEmail();
+        return getUsername();
     }
 
     public UserFields(UUID id, long createdTime, UUID tenantId, UUID customerId,
-                      Long version, String firstName, String lastName, String email,
+                      Long version, String username, String firstName, String lastName, String email,
                       String phone, JsonNode additionalInfo) {
         super(id, createdTime, tenantId, customerId, version);
+        this.username = username;
         this.firstName = firstName;
         this.lastName = lastName;
         this.email = email;

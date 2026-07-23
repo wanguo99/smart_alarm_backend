@@ -25,6 +25,7 @@ import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import org.thingsboard.server.common.data.User;
+import org.thingsboard.server.common.data.UsernameUtils;
 import org.thingsboard.server.common.data.id.CustomerId;
 import org.thingsboard.server.common.data.id.TenantId;
 import org.thingsboard.server.common.data.id.UserId;
@@ -50,6 +51,9 @@ public class UserEntity extends BaseVersionedEntity<User> {
     @Enumerated(EnumType.STRING)
     @Column(name = ModelConstants.USER_AUTHORITY_PROPERTY)
     private Authority authority;
+
+    @Column(name = ModelConstants.USER_USERNAME_PROPERTY, nullable = false, unique = true, length = 64)
+    private String username;
 
     @Column(name = ModelConstants.USER_EMAIL_PROPERTY, unique = true)
     private String email;
@@ -79,6 +83,7 @@ public class UserEntity extends BaseVersionedEntity<User> {
         if (user.getCustomerId() != null) {
             this.customerId = user.getCustomerId().getId();
         }
+        this.username = UsernameUtils.normalize(user.getUsername() != null ? user.getUsername() : user.getEmail());
         this.email = user.getEmail();
         this.firstName = user.getFirstName();
         this.lastName = user.getLastName();
@@ -98,6 +103,7 @@ public class UserEntity extends BaseVersionedEntity<User> {
         if (customerId != null) {
             user.setCustomerId(new CustomerId(customerId));
         }
+        user.setUsername(username);
         user.setEmail(email);
         user.setFirstName(firstName);
         user.setLastName(lastName);

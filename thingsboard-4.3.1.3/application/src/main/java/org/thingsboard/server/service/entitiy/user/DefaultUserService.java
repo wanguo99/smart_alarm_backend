@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.thingsboard.rule.engine.api.MailService;
 import org.thingsboard.server.common.data.EntityType;
+import org.thingsboard.server.common.data.StringUtils;
 import org.thingsboard.server.common.data.User;
 import org.thingsboard.server.common.data.UserActivationLink;
 import org.thingsboard.server.common.data.audit.ActionType;
@@ -51,6 +52,9 @@ public class DefaultUserService extends AbstractTbEntityService implements TbUse
         ActionType actionType = tbUser.getId() == null ? ActionType.ADDED : ActionType.UPDATED;
         try {
             boolean sendEmail = tbUser.getId() == null && sendActivationMail;
+            if (sendEmail && StringUtils.isEmpty(tbUser.getEmail())) {
+                throw new ThingsboardException("Contact email is required to send an activation email", ThingsboardErrorCode.BAD_REQUEST_PARAMS);
+            }
             User savedUser = checkNotNull(userService.saveUser(tenantId, tbUser));
             if (sendEmail) {
                 UserActivationLink activationLink = getActivationLink(tenantId, customerId, savedUser.getId(), request);
