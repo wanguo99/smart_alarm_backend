@@ -42,7 +42,8 @@
       <div class="user-display-name flex flex-col gap-0.5">
         <span *ngIf="user.firstName || user.lastName"
               [innerHTML]="getFullName(user) | highlight:searchText"></span>
-        <span [innerHTML]="user.email | highlight:searchText" tbTruncateWithTooltip></span>
+        <span [innerHTML]="user.username | highlight:searchText" tbTruncateWithTooltip></span>
+        <span *ngIf="user.email" [innerHTML]="user.email | highlight:searchText" tbTruncateWithTooltip></span>
       </div>
     </mat-option>
     <mat-option *ngIf="!(filteredUsers | async)?.length" [value]="null" class="tb-not-found">
@@ -54,4 +55,3 @@
     </mat-option>
   </mat-autocomplete>
 </mat-form-field>
-

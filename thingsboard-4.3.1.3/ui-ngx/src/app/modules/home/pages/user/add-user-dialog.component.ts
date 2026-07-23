@@ -73,10 +73,19 @@ export class AddUserDialogComponent extends DialogComponent<AddUserDialogCompone
     this.userComponent.isEdit = true;
     this.userComponent.entity = this.user;
     this.detailsForm = this.userComponent.entityForm;
+    this.detailsForm.get('email').valueChanges.subscribe(email => {
+      if (!email?.trim() && this.activationMethod === ActivationMethod.SEND_ACTIVATION_MAIL) {
+        this.activationMethod = ActivationMethod.DISPLAY_ACTIVATION_LINK;
+      }
+    });
   }
 
   cancel(): void {
     this.dialogRef.close(null);
+  }
+
+  hasContactEmail(): boolean {
+    return !!this.detailsForm?.get('email')?.value?.trim();
   }
 
   add(): void {

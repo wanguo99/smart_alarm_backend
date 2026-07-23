@@ -54,6 +54,7 @@ public class DefaultAlarmQueryRepository implements AlarmQueryRepository {
     private static final Map<String, String> alarmFieldColumnMap = new HashMap<>();
 
     private static final String ASSIGNEE_EMAIL_KEY = "assigneeEmail";
+    private static final String ASSIGNEE_USERNAME_KEY = "assigneeUsername";
     private static final String ASSIGNEE_LAST_NAME_KEY = "assigneeLastName";
     private static final String ASSIGNEE_FIRST_NAME_KEY = "assigneeFirstName";
     private static final String ASSIGNEE_ID_KEY = "assigneeId";
@@ -82,6 +83,7 @@ public class DefaultAlarmQueryRepository implements AlarmQueryRepository {
         alarmFieldColumnMap.put("originatorLabel", ModelConstants.ALARM_ORIGINATOR_LABEL_PROPERTY);
         alarmFieldColumnMap.put(ASSIGNEE_FIRST_NAME_KEY, ModelConstants.ALARM_ASSIGNEE_FIRST_NAME_PROPERTY);
         alarmFieldColumnMap.put(ASSIGNEE_LAST_NAME_KEY, ModelConstants.ALARM_ASSIGNEE_LAST_NAME_PROPERTY);
+        alarmFieldColumnMap.put(ASSIGNEE_USERNAME_KEY, ModelConstants.ALARM_ASSIGNEE_USERNAME_PROPERTY);
         alarmFieldColumnMap.put(ASSIGNEE_EMAIL_KEY, ModelConstants.ALARM_ASSIGNEE_EMAIL_PROPERTY);
         alarmFieldColumnMap.put("originatorDisplayName", ModelConstants.ALARM_ORIGINATOR_DISPLAY_NAME_PROPERTY);
     }
@@ -110,6 +112,7 @@ public class DefaultAlarmQueryRepository implements AlarmQueryRepository {
             " coalesce(a.originator_label, a.originator_name) as originator_display_name, " +
             " a.assignee_first_name as assignee_first_name, " +
             " a.assignee_last_name as assignee_last_name, " +
+            " a.assignee_username as assignee_username, " +
             " a.assignee_email as assignee_email, " +
             " a.cleared as cleared, " +
             " a.acknowledged as acknowledged, ";
@@ -150,7 +153,7 @@ public class DefaultAlarmQueryRepository implements AlarmQueryRepository {
             EntityDataSortOrder sortOrder = pageLink.getSortOrder();
 
             if (sortOrder != null && EntityKeyType.ALARM_FIELD.equals(sortOrder.getKey().getType()) && ASSIGNEE_KEY.equalsIgnoreCase(sortOrder.getKey().getKey())) {
-                sortOrder = new EntityDataSortOrder(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_EMAIL_KEY), sortOrder.getDirection());
+                sortOrder = new EntityDataSortOrder(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_USERNAME_KEY), sortOrder.getDirection());
             }
 
             List<EntityKey> alarmFields = new ArrayList<>();
@@ -159,6 +162,7 @@ public class DefaultAlarmQueryRepository implements AlarmQueryRepository {
                     alarmFields.add(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_ID_KEY));
                     alarmFields.add(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_FIRST_NAME_KEY));
                     alarmFields.add(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_LAST_NAME_KEY));
+                    alarmFields.add(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_USERNAME_KEY));
                     alarmFields.add(new EntityKey(EntityKeyType.ALARM_FIELD, ASSIGNEE_EMAIL_KEY));
                 } else {
                     alarmFields.add(key);

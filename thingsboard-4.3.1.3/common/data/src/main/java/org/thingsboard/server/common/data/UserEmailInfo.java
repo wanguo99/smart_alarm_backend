@@ -28,7 +28,9 @@ public class UserEmailInfo implements HasId<UserId> {
 
     @Schema(description = "User id")
     private UserId id;
-    @Schema(description = "User email", example = "john@gmail.com")
+    @Schema(description = "Username", example = "operator01")
+    private String username;
+    @Schema(description = "Optional user contact email", example = "john@gmail.com")
     private String email;
     @Schema(description = "User first name", example = "John")
     private String firstName;

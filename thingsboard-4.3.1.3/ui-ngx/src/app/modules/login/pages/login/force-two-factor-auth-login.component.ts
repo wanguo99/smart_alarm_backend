@@ -127,7 +127,7 @@ export class ForceTwoFactorAuthLoginComponent extends PageComponent implements O
     });
 
     this.emailConfigForm = this.fb.group({
-      email: [getCurrentAuthUser(this.store).sub, [Validators.required, Validators.email]]
+      email: [getCurrentAuthUser(this.store).email || '', [Validators.required, Validators.email]]
     });
 
     this.twoFaService.getAccountTwoFaSettings().subscribe(accountConfig => {
@@ -233,7 +233,7 @@ export class ForceTwoFactorAuthLoginComponent extends PageComponent implements O
         break;
       case TwoFactorAuthProviderType.EMAIL:
         this.emailState.set(ProvidersState.INPUT)
-        this.emailConfigForm.get('email').reset(getCurrentAuthUser(this.store).sub);
+        this.emailConfigForm.get('email').reset(getCurrentAuthUser(this.store).email || '');
         break;
     }
   }

@@ -27,6 +27,7 @@ import org.thingsboard.server.common.data.id.UserId;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ASSIGNEE_EMAIL_PROPERTY;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ASSIGNEE_FIRST_NAME_PROPERTY;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ASSIGNEE_LAST_NAME_PROPERTY;
+import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ASSIGNEE_USERNAME_PROPERTY;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ORIGINATOR_LABEL_PROPERTY;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_ORIGINATOR_NAME_PROPERTY;
 import static org.thingsboard.server.dao.model.ModelConstants.ALARM_STATUS_PROPERTY;
@@ -46,6 +47,8 @@ public class AlarmInfoEntity extends AbstractAlarmEntity<AlarmInfo> {
     private String assigneeFirstName;
     @Column(name = ALARM_ASSIGNEE_LAST_NAME_PROPERTY)
     private String assigneeLastName;
+    @Column(name = ALARM_ASSIGNEE_USERNAME_PROPERTY)
+    private String assigneeUsername;
     @Column(name = ALARM_ASSIGNEE_EMAIL_PROPERTY)
     private String assigneeEmail;
     @Column(name = ALARM_STATUS_PROPERTY)
@@ -61,7 +64,8 @@ public class AlarmInfoEntity extends AbstractAlarmEntity<AlarmInfo> {
         alarmInfo.setOriginatorName(originatorName);
         alarmInfo.setOriginatorLabel(originatorLabel);
         if (getAssigneeId() != null) {
-            alarmInfo.setAssignee(new AlarmAssignee(new UserId(getAssigneeId()), assigneeFirstName, assigneeLastName, assigneeEmail));
+            alarmInfo.setAssignee(new AlarmAssignee(new UserId(getAssigneeId()), assigneeFirstName, assigneeLastName,
+                    assigneeUsername, assigneeEmail));
         }
         return alarmInfo;
     }

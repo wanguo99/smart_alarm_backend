@@ -54,7 +54,8 @@ export class AlarmAssigneeComponent {
   getAssignee() {
     if (this.alarm) {
       this.userAssigned = this.alarm.assigneeId && ((isNotEmptyStr(this.alarm.assignee?.firstName) ||
-        isNotEmptyStr(this.alarm.assignee?.lastName)) || isNotEmptyStr(this.alarm.assignee?.email));
+        isNotEmptyStr(this.alarm.assignee?.lastName)) || isNotEmptyStr(this.alarm.assignee?.username) ||
+        isNotEmptyStr(this.alarm.assignee?.email));
       if (this.userAssigned) {
         return getUserDisplayName(this.alarm.assignee);
       } else {

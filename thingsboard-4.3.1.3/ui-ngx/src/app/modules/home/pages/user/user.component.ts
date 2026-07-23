@@ -19,7 +19,7 @@ import { select, Store } from '@ngrx/store';
 import { AppState } from '@core/core.state';
 import { EntityComponent } from '../../components/entity/entity.component';
 import { UntypedFormBuilder, UntypedFormGroup, Validators } from '@angular/forms';
-import { User } from '@shared/models/user.model';
+import { User, usernamePattern } from '@shared/models/user.model';
 import { selectAuth } from '@core/auth/auth.selectors';
 import { map } from 'rxjs/operators';
 import { Authority } from '@shared/models/authority.enum';
@@ -75,7 +75,8 @@ export class UserComponent extends EntityComponent<User>{
   buildForm(entity: User): UntypedFormGroup {
     return this.fb.group(
       {
-        email: [entity ? entity.email : '', [Validators.required, validateEmail]],
+        username: [entity ? entity.username : '', [Validators.required, Validators.pattern(usernamePattern)]],
+        email: [entity ? entity.email : '', [validateEmail]],
         firstName: [entity ? entity.firstName : ''],
         lastName: [entity ? entity.lastName : ''],
         phone: [entity ? entity.phone : ''],
@@ -96,6 +97,7 @@ export class UserComponent extends EntityComponent<User>{
   }
 
   updateForm(entity: User) {
+    this.entityForm.patchValue({username: entity.username});
     this.entityForm.patchValue({email: entity.email});
     this.entityForm.patchValue({firstName: entity.firstName});
     this.entityForm.patchValue({lastName: entity.lastName});

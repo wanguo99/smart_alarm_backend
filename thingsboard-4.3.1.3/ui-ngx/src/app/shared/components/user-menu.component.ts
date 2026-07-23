@@ -97,7 +97,7 @@ export class UserMenuComponent implements OnInit, OnDestroy {
           name += user.lastName;
         }
       } else {
-        name = user.email;
+        name = user.username;
       }
     }
     return name;

@@ -1043,7 +1043,7 @@ public class UserControllerTest extends AbstractControllerTest {
         List<UserEmailInfo> usersInfo = getUsersInfo(pageLink);
 
         List<UserEmailInfo> expectedUserInfos = customerUsersContainingWord.stream().map(customerUser -> new UserEmailInfo(customerUser.getId(),
-                        customerUser.getEmail(), customerUser.getFirstName() == null ? "" : customerUser.getFirstName(),
+                        customerUser.getUsername(), customerUser.getEmail(), customerUser.getFirstName() == null ? "" : customerUser.getFirstName(),
                         customerUser.getLastName() == null ? "" : customerUser.getLastName()))
                 .sorted(userDataIdComparator).collect(Collectors.toList());
         usersInfo.sort(userDataIdComparator);
@@ -1096,7 +1096,7 @@ public class UserControllerTest extends AbstractControllerTest {
         List<UserEmailInfo> usersInfo = getUsersInfo(pageLink);
 
         List<UserEmailInfo> expectedUserInfos = usersContainingWord.stream().map(customerUser -> new UserEmailInfo(customerUser.getId(),
-                        customerUser.getEmail(), customerUser.getFirstName() == null ? "" : customerUser.getFirstName(),
+                        customerUser.getUsername(), customerUser.getEmail(), customerUser.getFirstName() == null ? "" : customerUser.getFirstName(),
                         customerUser.getLastName() == null ? "" : customerUser.getLastName()))
                 .sorted(userDataIdComparator).collect(Collectors.toList());
         usersInfo.sort(userDataIdComparator);

@@ -215,7 +215,7 @@ export class AlarmTableConfig extends EntityTableConfig<AlarmInfo, TimePageLink>
     let templateContent: string;
 
     if (hasAssigneeId && ((isNotEmptyStr(entity.assignee?.firstName) || isNotEmptyStr(entity.assignee?.lastName)) ||
-      isNotEmptyStr(entity.assignee?.email))) {
+      isNotEmptyStr(entity.assignee?.username) || isNotEmptyStr(entity.assignee?.email))) {
       templateContent = `
         <span class="assigned-container">
          <span class="user-avatar" style="background-color: ${this.getAvatarBgColor(entity.assignee)}">

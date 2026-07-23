@@ -58,10 +58,13 @@
           }
           <mat-form-field class="tb-autofilled" appearance="outline" hideRequiredMarker>
             <mat-label translate>login.username</mat-label>
-            <input id="username-input" matInput type="email" autofocus formControlName="username" autocomplete="email"/>
-            <mat-icon matPrefix>email</mat-icon>
-            <mat-error *ngIf="loginFormGroup.get('username').invalid">
-              {{ 'login.invalid-email-format' | translate }}
+            <input id="username-input" matInput type="text" autofocus formControlName="username" autocomplete="username"/>
+            <mat-icon matPrefix>person</mat-icon>
+            <mat-error *ngIf="loginFormGroup.get('username').hasError('required')">
+              {{ 'user.username-required' | translate }}
+            </mat-error>
+            <mat-error *ngIf="loginFormGroup.get('username').hasError('pattern')">
+              {{ 'user.invalid-username-format' | translate }}
             </mat-error>
           </mat-form-field>
           <mat-form-field class="tb-autofilled" appearance="outline">

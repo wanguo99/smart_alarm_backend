@@ -25,7 +25,8 @@ import { UnitSystem } from '@shared/models/unit.models';
 export interface User extends BaseData<UserId>, HasTenantId {
   tenantId: TenantId;
   customerId: CustomerId;
-  email: string;
+  username: string;
+  email?: string;
   phone: string;
   authority: Authority;
   firstName: string;
@@ -65,6 +66,7 @@ export interface ActivationLinkInfo {
 
 export interface AuthUser {
   sub: string;
+  email?: string;
   scopes: string[];
   userId: string;
   firstName: string;
@@ -78,7 +80,10 @@ export interface AuthUser {
 
 export interface UserEmailInfo {
   id: UserId;
-  email: string;
+  username: string;
+  email?: string;
   firstName: string;
   lastName: string;
 }
+
+export const usernamePattern = /^(?:[a-zA-Z0-9][a-zA-Z0-9._@-]{1,62}[a-zA-Z0-9]|\+[0-9]{3,63})$/;

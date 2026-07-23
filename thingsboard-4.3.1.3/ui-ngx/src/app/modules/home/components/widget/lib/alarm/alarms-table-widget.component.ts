@@ -1181,7 +1181,7 @@ export class AlarmsTableWidgetComponent extends PageComponent implements OnInit,
 
   checkAssigneeHasName(alarmAssignee: AlarmAssignee): boolean {
     return (isNotEmptyStr(alarmAssignee?.firstName) || isNotEmptyStr(alarmAssignee?.lastName)) ||
-      isNotEmptyStr(alarmAssignee?.email);
+      isNotEmptyStr(alarmAssignee?.username) || isNotEmptyStr(alarmAssignee?.email);
   }
 
   getUserDisplayName(alarmAssignee: AlarmAssignee) {

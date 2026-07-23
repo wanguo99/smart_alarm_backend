@@ -84,13 +84,14 @@ export class UsersTableConfigResolver  {
 
     this.config.columns.push(
       new DateEntityTableColumn<User>('createdTime', 'common.created-time', this.datePipe, '150px'),
-      new EntityTableColumn<User>('firstName', 'user.first-name', '33%'),
-      new EntityTableColumn<User>('lastName', 'user.last-name', '33%'),
-      new EntityTableColumn<User>('email', 'user.email', '33%')
+      new EntityTableColumn<User>('username', 'user.username', '25%'),
+      new EntityTableColumn<User>('firstName', 'user.first-name', '25%'),
+      new EntityTableColumn<User>('lastName', 'user.last-name', '25%'),
+      new EntityTableColumn<User>('email', 'user.email', '25%')
     );
 
     this.config.deleteEnabled = user => user && user.id && user.id.id !== this.authUser.id.id;
-    this.config.deleteEntityTitle = user => this.translate.instant('user.delete-user-title', { userEmail: user.email });
+    this.config.deleteEntityTitle = user => this.translate.instant('user.delete-user-title', { userEmail: user.username });
     this.config.deleteEntityContent = () => this.translate.instant('user.delete-user-text');
     this.config.deleteEntitiesTitle = count => this.translate.instant('user.delete-users-title', {count});
     this.config.deleteEntitiesContent = () => this.translate.instant('user.delete-users-text');

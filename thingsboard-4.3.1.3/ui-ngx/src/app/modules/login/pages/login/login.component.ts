@@ -21,9 +21,9 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Constants } from '@shared/models/constants';
 import { Router } from '@angular/router';
 import { OAuth2ClientLoginInfo } from '@shared/models/oauth2.models';
-import { validateEmail } from '@app/core/utils';
 import { PageComponent } from '@shared/components/page.component';
 import { finalize } from 'rxjs/operators';
+import { usernamePattern } from '@shared/models/user.model';
 
 @Component({
     selector: 'tb-login',
@@ -37,7 +37,7 @@ export class LoginComponent extends PageComponent implements OnInit {
   isLoading = false;
 
   loginFormGroup = this.fb.group({
-    username: ['', [Validators.required, validateEmail]],
+    username: ['', [Validators.required, Validators.pattern(usernamePattern)]],
     password: ['']
   });
   oauth2Clients: Array<OAuth2ClientLoginInfo> = null;

@@ -21,7 +21,7 @@
       <div class="flex flex-1 flex-row items-start justify-between xs:flex-col xs:justify-start xs:gap-2">
         <div class="flex flex-1 flex-col">
           <span class="mat-headline-5" translate>profile.profile</span>
-          <span class="profile-email" style='opacity: 0.7;'>{{ profile ? profile.get('email').value : '' }}</span>
+          <span class="profile-email" style='opacity: 0.7;'>{{ profile ? profile.get('username').value : '' }}</span>
         </div>
         <div class="flex flex-col">
           <span class="mat-mdc-subheader" translate>profile.last-login-time</span>
@@ -36,11 +36,18 @@
       <form [formGroup]="profile" (ngSubmit)="save()">
         <fieldset [disabled]="isLoading$ | async">
           <mat-form-field class="mat-block">
+            <mat-label translate>user.username</mat-label>
+            <input matInput type="text" formControlName="username" autocomplete="off"/>
+            <mat-error *ngIf="profile.get('username').hasError('required')">
+              {{ 'user.username-required' | translate }}
+            </mat-error>
+            <mat-error *ngIf="profile.get('username').hasError('pattern')">
+              {{ 'user.invalid-username-format' | translate }}
+            </mat-error>
+          </mat-form-field>
+          <mat-form-field class="mat-block">
             <mat-label translate>user.email</mat-label>
             <input matInput type="email" formControlName="email"/>
-            <mat-error *ngIf="profile.get('email').hasError('required')">
-              {{ 'user.email-required' | translate }}
-            </mat-error>
             <mat-error *ngIf="profile.get('email').hasError('email')">
               {{ 'user.invalid-email-format' | translate }}
             </mat-error>

@@ -154,7 +154,7 @@ export class AlarmAssigneeSelectComponent implements OnInit, ControlValueAccesso
         displayName += user?.lastName;
       }
     } else {
-      displayName = user?.email;
+      displayName = user?.username || user?.email;
     }
     return displayName;
   }
@@ -170,7 +170,7 @@ export class AlarmAssigneeSelectComponent implements OnInit, ControlValueAccesso
         initials += this.assignee?.lastName.charAt(0);
       }
     } else {
-      initials += this.assignee?.email.charAt(0);
+      initials += (this.assignee?.username || this.assignee?.email)?.charAt(0) || '';
     }
     return initials.toUpperCase();
   }

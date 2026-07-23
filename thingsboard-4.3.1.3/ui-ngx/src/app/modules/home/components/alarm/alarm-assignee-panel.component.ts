@@ -163,7 +163,7 @@ export class AlarmAssigneePanelComponent implements  OnInit, AfterViewInit, OnDe
   fetchUsers(searchText?: string): Observable<Array<UserEmailInfo>> {
     this.searchText = searchText;
     const pageLink = new PageLink(50, 0, searchText, {
-      property: 'email',
+      property: 'username',
       direction: Direction.ASC
     });
     return this.userService.getUsersForAssign(this.alarmId, pageLink, {ignoreLoading: true})

@@ -159,6 +159,7 @@ export interface AlarmComment extends BaseData<AlarmCommentId> {
 export interface AlarmCommentInfo extends AlarmComment {
   firstName?: string;
   lastName?: string;
+  username?: string;
   email?: string;
 }
 
@@ -172,7 +173,8 @@ export interface AlarmInfo extends Alarm {
 export interface AlarmAssignee {
   firstName: string;
   lastName: string;
-  email: string;
+  username?: string;
+  email?: string;
 }
 
 export enum AlarmAssigneeOption {
@@ -203,6 +205,7 @@ export const simulatedAlarm: AlarmInfo = {
   assignee: {
     firstName: '',
     lastName: '',
+    username: 'simulated-user',
     email: 'test@example.com',
   },
   originator: {
@@ -403,7 +406,7 @@ export const getUserDisplayName = (alarmAssignee: AlarmAssignee |  AlarmCommentI
         displayName += alarmAssignee.lastName;
       }
     }   else {
-      displayName = alarmAssignee.email;
+      displayName = alarmAssignee.username || alarmAssignee.email;
     }
   }
   return displayName;
@@ -419,7 +422,7 @@ export const getUserInitials = (alarmAssignee: AlarmAssignee): string => {
       initials += alarmAssignee.lastName.charAt(0);
     }
   } else {
-    initials += alarmAssignee.email.charAt(0);
+    initials += (alarmAssignee.username || alarmAssignee.email)?.charAt(0) || '';
   }
   return initials.toUpperCase();
 };

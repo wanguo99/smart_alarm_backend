@@ -296,7 +296,7 @@ public class UserController extends BaseController {
     }
 
     @ApiOperation(value = "Find users by query (findUsersByQuery)",
-            notes = "Returns page of user data objects. Search is been executed by email, firstName and " +
+            notes = "Returns page of user data objects. Search is executed by username, email, firstName and " +
                     "lastName fields. " + PAGE_DATA_PARAMETERS + TENANT_OR_CUSTOMER_AUTHORITY_PARAGRAPH)
     @PreAuthorize("hasAnyAuthority('TENANT_ADMIN', 'CUSTOMER_USER')")
     @GetMapping(value = "/users/info")
@@ -307,7 +307,7 @@ public class UserController extends BaseController {
             @RequestParam int page,
             @Parameter(description = USER_TEXT_SEARCH_DESCRIPTION)
             @RequestParam(required = false) String textSearch,
-            @Parameter(description = SORT_PROPERTY_DESCRIPTION, schema = @Schema(allowableValues = {"createdTime", "firstName", "lastName", "email"}))
+            @Parameter(description = SORT_PROPERTY_DESCRIPTION, schema = @Schema(allowableValues = {"createdTime", "username", "firstName", "lastName", "email"}))
             @RequestParam(required = false) String sortProperty,
             @Parameter(description = SORT_ORDER_DESCRIPTION, schema = @Schema(allowableValues = {"ASC", "DESC"}))
             @RequestParam(required = false) String sortOrder) throws ThingsboardException {
@@ -316,7 +316,8 @@ public class UserController extends BaseController {
         EntityTypeFilter entityFilter = new EntityTypeFilter();
         entityFilter.setEntityType(EntityType.USER);
         EntityDataPageLink pageLink = new EntityDataPageLink(pageSize, page, textSearch, createEntityDataSortOrder(sortProperty, sortOrder));
-        List<EntityKey> entityFields = Arrays.asList(new EntityKey(ENTITY_FIELD, "firstName"),
+        List<EntityKey> entityFields = Arrays.asList(new EntityKey(ENTITY_FIELD, "username"),
+                new EntityKey(ENTITY_FIELD, "firstName"),
                 new EntityKey(ENTITY_FIELD, "lastName"),
                 new EntityKey(ENTITY_FIELD, "email"));
 
@@ -326,6 +327,7 @@ public class UserController extends BaseController {
         {
             Map<String, TsValue> fieldValues = entityData.getLatest().get(ENTITY_FIELD);
             return new UserEmailInfo(UserId.fromString(entityData.getEntityId().getId().toString()),
+                    fieldValues.get("username").getValue(),
                     fieldValues.get("email").getValue(),
                     fieldValues.get("firstName").getValue(),
                     fieldValues.get("lastName").getValue());
@@ -440,7 +442,8 @@ public class UserController extends BaseController {
         } else {
             pageData = userService.findCustomerUsers(tenantId, alarm.getCustomerId(), pageLink);
         }
-        return pageData.mapData(user -> new UserEmailInfo(user.getId(), user.getEmail(), user.getFirstName(), user.getLastName()));
+        return pageData.mapData(user -> new UserEmailInfo(user.getId(), user.getUsername(), user.getEmail(),
+                user.getFirstName(), user.getLastName()));
     }
 
     @ApiOperation(value = "Save user settings (saveUserSettings)",

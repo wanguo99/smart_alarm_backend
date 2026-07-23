@@ -16,7 +16,7 @@
 
 import { Component, OnInit } from '@angular/core';
 import { UserService } from '@core/http/user.service';
-import { AuthUser, User } from '@shared/models/user.model';
+import { AuthUser, User, usernamePattern } from '@shared/models/user.model';
 import { Authority } from '@shared/models/authority.enum';
 import { PageComponent } from '@shared/components/page.component';
 import { Store } from '@ngrx/store';
@@ -65,7 +65,8 @@ export class ProfileComponent extends PageComponent implements OnInit, HasConfir
 
   private buildProfileForm() {
     this.profile = this.fb.group({
-      email: ['', [Validators.required, validateEmail]],
+      username: ['', [Validators.required, Validators.pattern(usernamePattern)]],
+      email: ['', [validateEmail]],
       firstName: [''],
       lastName: [''],
       phone: [''],
@@ -102,6 +103,7 @@ export class ProfileComponent extends PageComponent implements OnInit, HasConfir
             createdTime: user.createdTime,
             tenantId: user.tenantId,
             customerId: user.customerId,
+            username: user.username,
             email: user.email,
             phone: user.phone,
             firstName: user.firstName,

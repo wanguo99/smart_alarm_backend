@@ -83,11 +83,13 @@ public class AlarmDataAdapter {
         Object assigneeIdObj = row.get(ModelConstants.ASSIGNEE_ID_PROPERTY);
         String assigneeFirstName = null;
         String assigneeLastName = null;
+        String assigneeUsername = null;
         String assigneeEmail = null;
         if (assigneeIdObj != null) {
             alarm.setAssigneeId(new UserId((UUID) row.get(ModelConstants.ALARM_ASSIGNEE_ID_PROPERTY)));
             assigneeFirstName = (String) row.get(ModelConstants.ALARM_ASSIGNEE_FIRST_NAME_PROPERTY);
             assigneeLastName = (String) row.get(ModelConstants.ALARM_ASSIGNEE_LAST_NAME_PROPERTY);
+            assigneeUsername = (String) row.get(ModelConstants.ALARM_ASSIGNEE_USERNAME_PROPERTY);
             assigneeEmail = (String) row.get(ModelConstants.ALARM_ASSIGNEE_EMAIL_PROPERTY);
         }
         alarm.setPropagate((boolean) row.get(ModelConstants.ALARM_PROPAGATE_PROPERTY));
@@ -125,7 +127,8 @@ public class AlarmDataAdapter {
         alarmData.setOriginatorLabel(originatorLabel);
         alarmData.setOriginatorDisplayName(originatorDisplayName);
         if (alarm.getAssigneeId() != null) {
-            alarmData.setAssignee(new AlarmAssignee(alarm.getAssigneeId(), assigneeFirstName, assigneeLastName, assigneeEmail));
+            alarmData.setAssignee(new AlarmAssignee(alarm.getAssigneeId(), assigneeFirstName, assigneeLastName,
+                    assigneeUsername, assigneeEmail));
         }
 
         return alarmData;

@@ -263,6 +263,7 @@ public class ModelConstants {
     public static final String ALARM_ASSIGNEE_ID_PROPERTY = "assignee_id";
     public static final String ALARM_ASSIGNEE_FIRST_NAME_PROPERTY = "assignee_first_name";
     public static final String ALARM_ASSIGNEE_LAST_NAME_PROPERTY = "assignee_last_name";
+    public static final String ALARM_ASSIGNEE_USERNAME_PROPERTY = "assignee_username";
     public static final String ALARM_ASSIGNEE_EMAIL_PROPERTY = "assignee_email";
     public static final String ALARM_START_TS_PROPERTY = "start_ts";
     public static final String ALARM_END_TS_PROPERTY = "end_ts";

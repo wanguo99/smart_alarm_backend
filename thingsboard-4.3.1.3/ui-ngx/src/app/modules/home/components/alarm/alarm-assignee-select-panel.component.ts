@@ -141,7 +141,7 @@ export class AlarmAssigneeSelectPanelComponent implements  OnInit, AfterViewInit
   fetchUsers(searchText?: string): Observable<Array<UserEmailInfo>> {
     this.searchText = searchText;
     const pageLink = new PageLink(50, 0, searchText, {
-      property: 'email',
+      property: 'username',
       direction: Direction.ASC
     });
     return this.userService.findUsersByQuery(pageLink, {ignoreLoading: true})

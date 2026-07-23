@@ -35,6 +35,7 @@ public class AlarmAssignee implements Serializable {
     private final UserId id;
     private final String firstName;
     private final String lastName;
+    private final String username;
     private final String email;
 
     @JsonIgnore
@@ -50,7 +51,7 @@ public class AlarmAssignee implements Serializable {
             title += lastName;
         }
         if (title.isEmpty()) {
-            title = email;
+            title = isNotEmpty(username) ? username : email;
         }
         return title;
     }

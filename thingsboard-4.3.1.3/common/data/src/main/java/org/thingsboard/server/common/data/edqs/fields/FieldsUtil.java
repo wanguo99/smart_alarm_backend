@@ -185,6 +185,7 @@ public class FieldsUtil {
                 .id(entity.getUuidId())
                 .createdTime(entity.getCreatedTime())
                 .customerId(getCustomerId(entity.getCustomerId()))
+                .username(entity.getUsername())
                 .firstName(entity.getFirstName())
                 .lastName(entity.getLastName())
                 .email(entity.getEmail())

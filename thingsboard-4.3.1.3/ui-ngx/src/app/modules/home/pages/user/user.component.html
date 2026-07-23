@@ -43,7 +43,7 @@
   <button mat-raised-button color="primary"
           [disabled]="(isLoading$ | async)"
           (click)="onEntityAction($event, 'resendActivation')"
-          [class.!hidden]="isEdit || isUserActivated()">
+          [class.!hidden]="isEdit || isUserActivated() || !entity?.email">
     {{'user.resend-activation' | translate }}
   </button>
   <button mat-raised-button color="primary"
@@ -75,13 +75,20 @@
   <form [formGroup]="entityForm">
     <fieldset [disabled]="(isLoading$ | async) || !isEdit">
       <mat-form-field class="mat-block" appearance="outline">
+        <mat-label translate>user.username</mat-label>
+        <input matInput type="text" formControlName="username" autocomplete="off">
+        <mat-error *ngIf="entityForm.get('username').hasError('required')">
+          {{ 'user.username-required' | translate }}
+        </mat-error>
+        <mat-error *ngIf="entityForm.get('username').hasError('pattern')">
+          {{ 'user.invalid-username-format' | translate }}
+        </mat-error>
+      </mat-form-field>
+      <mat-form-field class="mat-block" appearance="outline">
         <mat-label translate>user.email</mat-label>
         <input matInput type="email" formControlName="email">
         <mat-error *ngIf="entityForm.get('email').hasError('email')">
           {{ 'user.invalid-email-format' | translate }}
-        </mat-error>
-        <mat-error *ngIf="entityForm.get('email').hasError('required')">
-          {{ 'user.email-required' | translate }}
         </mat-error>
       </mat-form-field>
       <mat-form-field class="mat-block" appearance="outline">
