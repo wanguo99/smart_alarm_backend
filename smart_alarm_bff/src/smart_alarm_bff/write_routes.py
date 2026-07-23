@@ -110,6 +110,13 @@ async def _audit(connection: Any, principal: ProductPrincipal, request_id: str, 
         "SELECT event_hash FROM smart_alarm.audit_events WHERE tenant_id IS NOT DISTINCT FROM $1 ORDER BY id DESC LIMIT 1",
         principal.internal_tenant_id,
     )
+
+
+async def _outbox(connection: Any, tenant_id: UUID | None, aggregate_type: str, aggregate_id: str, event_type: str, payload: dict[str, object]) -> None:
+    await connection.execute(
+        "INSERT INTO smart_alarm.outbox_events (tenant_id, aggregate_type, aggregate_id, event_type, payload) VALUES ($1, $2, $3, $4, $5::jsonb)",
+        tenant_id, aggregate_type, aggregate_id, event_type, json.dumps(payload, separators=(",", ":"), ensure_ascii=True),
+    )
     canonical = json.dumps({"requestId": request_id, "action": action, "resourceType": resource_type, "resourceId": resource_id, "detail": detail}, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     event_hash = hashlib.sha256((bytes(previous) if previous else b"") + canonical).digest()
     await connection.execute(
@@ -197,6 +204,163 @@ def register_write_routes(router: APIRouter, sessions: SessionService, database:
                 result = {"operationId": str(operation_id), "kind": "system-tenant-archive", "status": "SUCCEEDED", "tenant": {"id": str(row["id"]), "name": row["name"], "archivedAt": int(row["archived_at"].timestamp() * 1000)}}
                 await _finish_operation(connection, operation_id, result, tenant_id)
                 await _audit(connection, principal, key, "TENANT_ARCHIVED", "TENANT", tenant_id, {})
+            return result
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("not_found", 404))
+
+    def user_scope(body: dict[str, object]) -> tuple[str, UUID | None, UUID | None]:
+        authority = body.get("authority")
+        if authority not in {"SYS_ADMIN", "TENANT_ADMIN", "CUSTOMER_USER"}:
+            raise WriteError("invalid_authority")
+        raw_tenant, raw_customer = body.get("tenantId"), body.get("customerId")
+        tenant_id = UUID(raw_tenant) if isinstance(raw_tenant, str) else None
+        customer_id = UUID(raw_customer) if isinstance(raw_customer, str) else None
+        if authority == "SYS_ADMIN" and (tenant_id is not None or customer_id is not None):
+            raise WriteError("invalid_user_scope")
+        if authority == "TENANT_ADMIN" and (tenant_id is None or customer_id is not None):
+            raise WriteError("invalid_user_scope")
+        if authority == "CUSTOMER_USER" and (tenant_id is None or customer_id is None):
+            raise WriteError("invalid_user_scope")
+        return authority, tenant_id, customer_id
+
+    @router.post("/api/v1/system/users")
+    async def create_system_user(request: Request, body: dict[str, object]):
+        try:
+            principal = await _guard(request, sessions, database, "system:users:write")
+            authority, tenant_id, customer_id = user_scope(body)
+            email = body.get("email")
+            if not isinstance(email, str) or email != email.strip().lower() or email.count("@") != 1 or len(email) > 320:
+                raise WriteError("invalid_email")
+            key = _idempotency(request)
+            async with _scoped_connection(await database(), principal) as connection:
+                operation_id, replay = await _begin_operation(connection, principal, key, "system-user-create", "USER", _body_hash(body))
+                if replay is not None:
+                    return replay
+                if tenant_id is not None and await connection.fetchval("SELECT 1 FROM smart_alarm.tenants WHERE id = $1 AND status = 'ACTIVE'", tenant_id) != 1:
+                    raise WriteError("tenant_not_found", 404)
+                if customer_id is not None and await connection.fetchval("SELECT 1 FROM smart_alarm.customers WHERE tenant_id = $1 AND id = $2 AND status = 'ACTIVE'", tenant_id, customer_id) != 1:
+                    raise WriteError("customer_not_found", 404)
+                if await connection.fetchval("SELECT 1 FROM smart_alarm.users WHERE lower(email) = $1 AND status <> 'ARCHIVED'", email) == 1:
+                    raise WriteError("user_already_exists", 409)
+                row = await connection.fetchrow("INSERT INTO smart_alarm.users (oidc_subject, email, authority, tenant_id, customer_id, status) VALUES ($1, $2, $3, $4, $5, 'SUSPENDED') RETURNING id, email, authority, tenant_id, customer_id, status", f"pending:{operation_id}", email, authority, tenant_id, customer_id)
+                await _outbox(connection, tenant_id, "USER", str(row["id"]), "identity.user.provision.requested", {"userId": str(row["id"]), "email": email, "authority": authority, "tenantId": str(tenant_id) if tenant_id else None, "customerId": str(customer_id) if customer_id else None})
+                public = {"id": str(row["id"]), "email": row["email"], "authority": row["authority"], "status": row["status"], **({"tenantId": str(row["tenant_id"])} if row["tenant_id"] else {}), **({"customerId": str(row["customer_id"])} if row["customer_id"] else {})}
+                result = {"operationId": str(operation_id), "kind": "system-user-create", "status": "SUCCEEDED", "user": public}
+                await _finish_operation(connection, operation_id, result, str(row["id"]))
+                await _audit(connection, principal, key, "SYSTEM_USER_CREATE_ACCEPTED", "USER", str(row["id"]), {"authority": authority})
+            return result
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("invalid_user_scope"))
+
+    @router.patch("/api/v1/system/users/{user_id}")
+    async def update_system_user(user_id: str, request: Request, body: dict[str, object]):
+        try:
+            principal = await _guard(request, sessions, database, "system:users:write")
+            user_uuid, key = UUID(user_id), _idempotency(request)
+            status = body.get("status")
+            if status not in {"ACTIVE", "SUSPENDED"}:
+                raise WriteError("invalid_user_status")
+            async with _scoped_connection(await database(), principal) as connection:
+                operation_id, replay = await _begin_operation(connection, principal, key, "system-user-update", "USER", _body_hash({"userId": user_id, **body}))
+                if replay is not None:
+                    return replay
+                if status == "ACTIVE":
+                    mapped = await connection.fetchval("SELECT thingsboard_user_id IS NOT NULL FROM smart_alarm.users WHERE id = $1 AND status <> 'ARCHIVED'", user_uuid)
+                    if mapped is not True:
+                        raise WriteError("identity_mapping_required", 409)
+                row = await connection.fetchrow("UPDATE smart_alarm.users SET status = $2, identity_version = identity_version + 1, updated_at = clock_timestamp() WHERE id = $1 AND status <> 'ARCHIVED' RETURNING id, email, authority, tenant_id, customer_id, status", user_uuid, status)
+                if row is None:
+                    raise WriteError("not_found", 404)
+                public = {"id": str(row["id"]), "email": row["email"], "authority": row["authority"], "status": row["status"], **({"tenantId": str(row["tenant_id"])} if row["tenant_id"] else {}), **({"customerId": str(row["customer_id"])} if row["customer_id"] else {})}
+                result = {"operationId": str(operation_id), "kind": "system-user-update", "status": "SUCCEEDED", "user": public}
+                await _finish_operation(connection, operation_id, result, user_id)
+                await _audit(connection, principal, key, "SYSTEM_USER_UPDATED", "USER", user_id, {"status": status})
+            return result
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("not_found", 404))
+
+    @router.post("/api/v1/system/users/{user_id}/archive")
+    async def archive_system_user(user_id: str, request: Request):
+        try:
+            principal = await _guard(request, sessions, database, "system:users:write")
+            user_uuid, key = UUID(user_id), _idempotency(request)
+            if user_uuid == principal.local_user_id:
+                raise WriteError("cannot_archive_self", 409)
+            async with _scoped_connection(await database(), principal) as connection:
+                operation_id, replay = await _begin_operation(connection, principal, key, "system-user-archive", "USER", _body_hash({"userId": user_id}))
+                if replay is not None:
+                    return replay
+                row = await connection.fetchrow("UPDATE smart_alarm.users SET status = 'ARCHIVED', archived_at = clock_timestamp(), identity_version = identity_version + 1, updated_at = clock_timestamp() WHERE id = $1 AND status <> 'ARCHIVED' RETURNING id, email, authority, tenant_id, customer_id, archived_at", user_uuid)
+                if row is None:
+                    raise WriteError("not_found", 404)
+                await connection.execute("UPDATE smart_alarm.role_assignments SET status = 'REVOKED', revoked_at = clock_timestamp(), version = version + 1 WHERE user_id = $1 AND status = 'ACTIVE'", user_uuid)
+                public = {"id": str(row["id"]), "email": row["email"], "authority": row["authority"], "status": "REMOVED", "archivedAt": int(row["archived_at"].timestamp() * 1000), **({"tenantId": str(row["tenant_id"])} if row["tenant_id"] else {}), **({"customerId": str(row["customer_id"])} if row["customer_id"] else {})}
+                result = {"operationId": str(operation_id), "kind": "system-user-archive", "status": "SUCCEEDED", "user": public}
+                await _finish_operation(connection, operation_id, result, user_id)
+                await _audit(connection, principal, key, "SYSTEM_USER_ARCHIVED", "USER", user_id, {})
+            return result
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("not_found", 404))
+
+    async def assign_product_role(request: Request, body: dict[str, object], user_id: str, operation_type: str) -> dict[str, object]:
+        principal = await _guard(request, sessions, database, "system:roles:write")
+        user_uuid, key = UUID(user_id), _idempotency(request)
+        authority, role_key = body.get("authority"), body.get("productRole")
+        if not isinstance(authority, str) or not isinstance(role_key, str):
+            raise WriteError("invalid_role_assignment")
+        async with _scoped_connection(await database(), principal) as connection:
+            operation_id, replay = await _begin_operation(connection, principal, key, operation_type, "ROLE_ASSIGNMENT", _body_hash({"userId": user_id, **body}))
+            if replay is not None:
+                return replay
+            user = await connection.fetchrow("SELECT id, authority, tenant_id, customer_id, status FROM smart_alarm.users WHERE id = $1 AND status <> 'ARCHIVED'", user_uuid)
+            role = await connection.fetchrow("SELECT id, role_key, authority FROM smart_alarm.product_roles WHERE role_key = $1 AND status = 'ACTIVE'", role_key)
+            if user is None or role is None:
+                raise WriteError("not_found", 404)
+            if user["authority"] != authority or role["authority"] != authority:
+                raise WriteError("role_authority_mismatch", 409)
+            await connection.execute("UPDATE smart_alarm.role_assignments SET status = 'REVOKED', revoked_at = clock_timestamp(), version = version + 1 WHERE user_id = $1 AND status = 'ACTIVE'", user_uuid)
+            await connection.execute("INSERT INTO smart_alarm.role_assignments (user_id, role_id, tenant_id, customer_id, granted_by) VALUES ($1, $2, $3, $4, $5)", user_uuid, role["id"], user["tenant_id"], user["customer_id"], principal.local_user_id)
+            await connection.execute("UPDATE smart_alarm.users SET identity_version = identity_version + 1, updated_at = clock_timestamp() WHERE id = $1", user_uuid)
+            result = {"operationId": str(operation_id), "kind": operation_type, "status": "SUCCEEDED", "assignment": {"userId": user_id, "authority": authority, "productRole": role_key}}
+            await _finish_operation(connection, operation_id, result, user_id)
+            await _audit(connection, principal, key, "PRODUCT_ROLE_ASSIGNED", "ROLE_ASSIGNMENT", user_id, {"productRole": role_key})
+        return result
+
+    @router.post("/api/v1/system/role-assignments")
+    async def create_role_assignment(request: Request, body: dict[str, object]):
+        try:
+            user_id = body.get("userId")
+            if not isinstance(user_id, str):
+                raise WriteError("invalid_role_assignment")
+            return await assign_product_role(request, body, user_id, "system-role-create")
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("invalid_role_assignment"))
+
+    @router.patch("/api/v1/system/role-assignments/{user_id}")
+    async def update_role_assignment(user_id: str, request: Request, body: dict[str, object]):
+        try:
+            return await assign_product_role(request, body, user_id, "system-role-update")
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("invalid_role_assignment"))
+
+    @router.post("/api/v1/system/role-assignments/{user_id}/archive")
+    async def archive_role_assignment(user_id: str, request: Request):
+        try:
+            principal = await _guard(request, sessions, database, "system:roles:write")
+            user_uuid, key = UUID(user_id), _idempotency(request)
+            if user_uuid == principal.local_user_id:
+                raise WriteError("cannot_revoke_self", 409)
+            async with _scoped_connection(await database(), principal) as connection:
+                operation_id, replay = await _begin_operation(connection, principal, key, "system-role-archive", "ROLE_ASSIGNMENT", _body_hash({"userId": user_id}))
+                if replay is not None:
+                    return replay
+                row = await connection.fetchrow("UPDATE smart_alarm.role_assignments ra SET status = 'REVOKED', revoked_at = clock_timestamp(), version = version + 1 FROM smart_alarm.users u, smart_alarm.product_roles pr WHERE ra.user_id = $1 AND ra.status = 'ACTIVE' AND u.id = ra.user_id AND pr.id = ra.role_id RETURNING u.authority, pr.role_key, ra.revoked_at", user_uuid)
+                if row is None:
+                    raise WriteError("not_found", 404)
+                await connection.execute("UPDATE smart_alarm.users SET identity_version = identity_version + 1, updated_at = clock_timestamp() WHERE id = $1", user_uuid)
+                result = {"operationId": str(operation_id), "kind": "system-role-archive", "status": "SUCCEEDED", "assignment": {"userId": user_id, "authority": row["authority"], "productRole": row["role_key"], "revokedAt": int(row["revoked_at"].timestamp() * 1000)}}
+                await _finish_operation(connection, operation_id, result, user_id)
+                await _audit(connection, principal, key, "PRODUCT_ROLE_REVOKED", "ROLE_ASSIGNMENT", user_id, {})
             return result
         except (WriteError, ValueError) as exc:
             return _write_error(exc if isinstance(exc, WriteError) else WriteError("not_found", 404))
