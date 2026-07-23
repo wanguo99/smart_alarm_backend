@@ -15,6 +15,7 @@ import uvicorn
 from . import __version__
 from .config import ConfigError, ProductionSettings
 from .infrastructure import Infrastructure
+from .directory_routes import mount_directory_routes
 from .session import SESSION_COOKIE, SessionError, SessionService, parse_bearer
 
 
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     )
     app.state.settings = settings
     app.state.infrastructure = infrastructure
+    app.state.sessions = sessions
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
@@ -136,6 +138,8 @@ def create_app() -> FastAPI:
             return session_error(exc)
         response.delete_cookie(SESSION_COOKIE, path="/")
         return {"status": "ok"}
+
+    mount_directory_routes(app, sessions, infrastructure.database)
 
     return app
 
