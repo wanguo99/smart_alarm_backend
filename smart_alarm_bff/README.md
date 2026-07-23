@@ -1,0 +1,26 @@
+# Smart Alarm BFF
+
+Independent production control-plane service for Smart Alarm. This directory is a sibling of the untouched official `thingsboard-4.3.1.3` source tree.
+
+The service owns product sessions, inventory binding, product roles, idempotency, approvals, notification outbox and audit associations. ThingsBoard remains authoritative for Device entities, telemetry, Alarm, RPC and OTA assignment.
+
+## Production rules
+
+- Start only with HTTPS/TLS upstreams and file-backed or workload-injected secrets.
+- Run database migrations as a separate release job before API/worker rollout. The migrator, API and worker use distinct database identities; migration credentials are never mounted into runtime pods.
+- Run API, worker and scheduler as separate processes and identities.
+- Never mount the Docker socket or persist secrets in the image/database.
+- Do not connect to or modify ThingsBoard internal database tables.
+
+Configuration is documented in the parent repository at `deployment/preproduction.env.example`. `python -m smart_alarm_bff.config` validates the environment without printing secret values.
+
+Direct and transitive runtime dependencies are pinned in `requirements.lock`. Production CI should additionally attach hashes/SBOM and sign the built image before promotion; the package index can be overridden with Docker build argument `PIP_INDEX_URL` without changing the lock.
+
+## Commands
+
+```bash
+smart-alarm-migrate
+smart-alarm-bff
+```
+
+The API exposes `/health`, `/ready` and loopback/protected `/metrics`. Business routes are added behind the `/api/v1` cookie session boundary; readiness remains false until PostgreSQL, Redis, ThingsBoard and OIDC discovery are reachable.

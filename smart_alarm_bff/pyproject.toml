@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-alarm-bff"
+version = "0.1.0"
+description = "Production Smart Alarm control-plane BFF and workers"
+requires-python = ">=3.12"
+dependencies = [
+  "asyncpg==0.30.0",
+  "fastapi==0.115.12",
+  "httpx==0.28.1",
+  "prometheus-client==0.21.1",
+  "psycopg[binary]==3.2.9",
+  "redis==6.2.0",
+  "uvicorn[standard]==0.34.3",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest==8.4.1",
+  "pytest-asyncio==1.0.0",
+]
+
+[project.scripts]
+smart-alarm-bff = "smart_alarm_bff.main:run"
+smart-alarm-migrate = "smart_alarm_bff.migrate:run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
