@@ -147,10 +147,10 @@ def register_directory_routes(router: APIRouter, sessions: SessionService, datab
                 raise DirectoryError("not_found", 404)
             async with _scoped_connection(await database(), principal) as connection:
                 rows = await connection.fetch(
-                    "SELECT id, email, status FROM smart_alarm.users WHERE tenant_id = $1 AND customer_id = $2 AND status <> 'ARCHIVED' ORDER BY lower(email), id",
+                    "SELECT id, username, email, status FROM smart_alarm.users WHERE tenant_id = $1 AND customer_id = $2 AND status <> 'ARCHIVED' ORDER BY username, id",
                     tenant_id, customer_uuid,
                 )
-            return {"customerId": customer_id, **_page([{"id": str(row["id"]), "email": row["email"], "status": row["status"]} for row in rows])}
+            return {"customerId": customer_id, **_page([{"id": str(row["id"]), "username": row["username"], "email": row["email"], "status": row["status"]} for row in rows])}
         except (DirectoryError, ValueError) as exc:
             return _error(exc if isinstance(exc, DirectoryError) else DirectoryError("not_found", 404))
 
@@ -300,8 +300,8 @@ def register_directory_routes(router: APIRouter, sessions: SessionService, datab
             principal = await guard(request)
             _require(principal, "system:users:read")
             async with _scoped_connection(await database(), principal) as connection:
-                rows = await connection.fetch("SELECT id, email, authority, tenant_id, customer_id, status FROM smart_alarm.users WHERE status <> 'ARCHIVED' ORDER BY lower(email), id")
-            return _page([{"id": str(row["id"]), "email": row["email"], "authority": row["authority"], "tenantId": str(row["tenant_id"]) if row["tenant_id"] else None, "customerId": str(row["customer_id"]) if row["customer_id"] else None, "status": row["status"]} for row in rows])
+                rows = await connection.fetch("SELECT id, username, email, authority, tenant_id, customer_id, status FROM smart_alarm.users WHERE authority = 'TENANT_ADMIN' AND status <> 'ARCHIVED' ORDER BY username, id")
+            return _page([{"id": str(row["id"]), "username": row["username"], "email": row["email"], "authority": row["authority"], "tenantId": str(row["tenant_id"]) if row["tenant_id"] else None, "customerId": str(row["customer_id"]) if row["customer_id"] else None, "status": row["status"]} for row in rows])
         except DirectoryError as exc:
             return _error(exc)
 
@@ -323,8 +323,8 @@ def register_directory_routes(router: APIRouter, sessions: SessionService, datab
             _require(principal, "system:users:read")
             tenant_uuid = UUID(tenant_id)
             async with _scoped_connection(await database(), principal) as connection:
-                rows = await connection.fetch("SELECT id, email FROM smart_alarm.users WHERE tenant_id = $1 AND status <> 'ARCHIVED' ORDER BY lower(email), id", tenant_uuid)
-            return {"tenantId": tenant_id, **_page([{"id": str(row["id"]), "email": row["email"]} for row in rows])}
+                rows = await connection.fetch("SELECT id, username, email FROM smart_alarm.users WHERE tenant_id = $1 AND authority = 'TENANT_ADMIN' AND status <> 'ARCHIVED' ORDER BY username, id", tenant_uuid)
+            return {"tenantId": tenant_id, **_page([{"id": str(row["id"]), "username": row["username"], "email": row["email"]} for row in rows])}
         except (DirectoryError, ValueError) as exc:
             return _error(exc if isinstance(exc, DirectoryError) else DirectoryError("not_found", 404))
 

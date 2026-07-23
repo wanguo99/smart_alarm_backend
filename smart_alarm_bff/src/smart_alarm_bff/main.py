@@ -142,7 +142,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     mount_directory_routes(app, sessions, infrastructure.database)
-    mount_write_routes(app, sessions, infrastructure.database)
+    mount_write_routes(app, sessions, infrastructure.database, infrastructure.thingsboard)
     mount_device_routes(app, sessions, infrastructure.database)
 
     return app

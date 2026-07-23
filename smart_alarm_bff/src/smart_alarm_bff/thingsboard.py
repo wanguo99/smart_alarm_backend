@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
+from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import httpx
@@ -81,11 +82,15 @@ class ThingsBoardUser:
 
 
 class ThingsBoardClient:
-    def __init__(self, base_url: str, *, verify: str | bool = True) -> None:
-        self._client = httpx.AsyncClient(base_url=base_url, timeout=httpx.Timeout(5), follow_redirects=False, verify=verify)
+    def __init__(self, base_url: str, *, verify: str | bool = True, client: httpx.AsyncClient | None = None) -> None:
+        self._owned = client is None
+        self._client = client or httpx.AsyncClient(
+            base_url=base_url, timeout=httpx.Timeout(5), follow_redirects=False, verify=verify,
+        )
 
     async def close(self) -> None:
-        await self._client.aclose()
+        if self._owned:
+            await self._client.aclose()
 
     async def current_user(self, access_token: str) -> ThingsBoardUser:
         if not access_token or len(access_token) > 16_384 or any(char.isspace() for char in access_token):
@@ -105,3 +110,106 @@ class ThingsBoardClient:
             return ThingsBoardUser.from_payload(response.json())
         except (ValueError, PolicyError) as exc:
             raise ThingsBoardError("invalid_platform_identity_response", retryable=False) from exc
+
+    async def provision_user(
+        self,
+        access_token: str,
+        *,
+        username: str,
+        email: str | None,
+        authority: str,
+        tenant_id: UUID,
+        customer_id: UUID | None,
+        password: str,
+        enabled: bool,
+    ) -> ThingsBoardUser:
+        payload: dict[str, object] = {
+            "username": normalize_username(username),
+            "email": normalize_email(email),
+            "authority": authority,
+            "tenantId": {"id": str(tenant_id), "entityType": "TENANT"},
+            "customerId": (
+                {"id": str(customer_id), "entityType": "CUSTOMER"}
+                if customer_id is not None
+                else {"id": str(UUID(int=0)), "entityType": "CUSTOMER"}
+            ),
+            "additionalInfo": {},
+        }
+        response = await self._authorized(
+            "POST", "/api/user", access_token, params={"sendActivationMail": "false"}, json=payload,
+        )
+        if response.status_code != 200:
+            raise ThingsBoardError("platform_user_create_failed", retryable=response.status_code >= 500 or response.status_code == 429)
+        try:
+            user = ThingsBoardUser.from_payload(response.json())
+        except (ValueError, PolicyError) as exc:
+            raise ThingsBoardError("invalid_platform_user_response", retryable=False) from exc
+        if (
+            user.username != payload["username"]
+            or user.email != payload["email"]
+            or user.authority != authority
+            or user.tenant_id != tenant_id
+            or user.customer_id != customer_id
+        ):
+            await self.delete_user(access_token, user.user_id, missing_ok=True)
+            raise ThingsBoardError("invalid_platform_user_scope", retryable=False)
+        try:
+            activation = await self._authorized(
+                "GET", f"/api/user/{user.user_id}/activationLink", access_token,
+            )
+            if activation.status_code != 200:
+                raise ThingsBoardError("platform_activation_link_failed", retryable=activation.status_code >= 500 or activation.status_code == 429)
+            token = self._activation_token(activation.text)
+            activated = await self._request(
+                "POST", "/api/noauth/activate", params={"sendActivationMail": "false"},
+                json={"activateToken": token, "password": password},
+            )
+            if activated.status_code != 200:
+                raise ThingsBoardError("platform_user_activation_failed", retryable=activated.status_code >= 500 or activated.status_code == 429)
+            if not enabled:
+                await self.set_user_enabled(access_token, user.user_id, False)
+        except Exception:
+            await self.delete_user(access_token, user.user_id, missing_ok=True)
+            raise
+        return user
+
+    async def set_user_enabled(self, access_token: str, user_id: UUID, enabled: bool) -> None:
+        response = await self._authorized(
+            "POST", f"/api/user/{user_id}/userCredentialsEnabled", access_token,
+            params={"userCredentialsEnabled": str(enabled).lower()},
+        )
+        if response.status_code != 200:
+            raise ThingsBoardError("platform_user_status_failed", retryable=response.status_code >= 500 or response.status_code == 429)
+
+    async def delete_user(self, access_token: str, user_id: UUID, *, missing_ok: bool = False) -> None:
+        response = await self._authorized("DELETE", f"/api/user/{user_id}", access_token)
+        expected = {200, 404} if missing_ok else {200}
+        if response.status_code not in expected:
+            raise ThingsBoardError("platform_user_delete_failed", retryable=response.status_code >= 500 or response.status_code == 429)
+
+    async def _authorized(self, method: str, path: str, access_token: str, **kwargs: object) -> httpx.Response:
+        if not access_token or len(access_token) > 16_384 or any(char.isspace() for char in access_token):
+            raise ThingsBoardError("invalid_platform_token", retryable=False)
+        response = await self._request(
+            method, path,
+            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+            **kwargs,
+        )
+        if response.status_code in {401, 403}:
+            raise ThingsBoardError("platform_user_operation_forbidden", retryable=False)
+        return response
+
+    async def _request(self, method: str, path: str, **kwargs: object) -> httpx.Response:
+        try:
+            return await self._client.request(method, path, **kwargs)
+        except httpx.HTTPError as exc:
+            raise ThingsBoardError("platform_identity_unavailable", retryable=True) from exc
+
+    @staticmethod
+    def _activation_token(link: str) -> str:
+        if not link or len(link) > 4096 or link != link.strip():
+            raise ThingsBoardError("invalid_platform_activation_link", retryable=False)
+        values = parse_qs(urlsplit(link).query, strict_parsing=True).get("activateToken", [])
+        if len(values) != 1 or not values[0] or len(values[0]) > 1024 or any(char.isspace() for char in values[0]):
+            raise ThingsBoardError("invalid_platform_activation_link", retryable=False)
+        return values[0]

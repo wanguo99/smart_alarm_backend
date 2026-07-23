@@ -5,7 +5,7 @@ import unittest
 try:
     from fastapi import APIRouter
     from smart_alarm_bff.policy import ProductPrincipal
-    from smart_alarm_bff.write_routes import _audit, _body_hash, _idempotency, _outbox, register_write_routes
+    from smart_alarm_bff.write_routes import _account_input, _account_request_hash, _audit, _body_hash, _idempotency, _outbox, register_write_routes
 except ModuleNotFoundError as exc:
     _missing_dependency = exc.name
 else:
@@ -17,6 +17,22 @@ class WriteRouteContractTest(unittest.TestCase):
     def test_request_hash_is_canonical(self) -> None:
         self.assertEqual(_body_hash({"b": 2, "a": 1}), _body_hash({"a": 1, "b": 2}))
         self.assertNotEqual(_body_hash({"a": 1}), _body_hash({"a": 2}))
+
+    def test_account_input_accepts_phone_without_email_and_never_hashes_password(self) -> None:
+        body = {
+            "username": "+8613800138000",
+            "email": None,
+            "initialPassword": "development-password",
+            "productRole": "CUSTOMER_VIEWER",
+        }
+        self.assertEqual(
+            _account_input(body, {"CUSTOMER_VIEWER"}),
+            ("+8613800138000", None, "development-password", "CUSTOMER_VIEWER", "ACTIVE"),
+        )
+        self.assertEqual(
+            _account_request_hash(body),
+            _account_request_hash({**body, "initialPassword": "different-password"}),
+        )
 
     def test_all_initial_lifecycle_write_paths_are_mounted(self) -> None:
         router = APIRouter()
