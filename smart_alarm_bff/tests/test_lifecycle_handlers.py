@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import unittest
 from uuid import UUID
@@ -114,6 +115,54 @@ class LifecycleHandlerContractTest(unittest.TestCase):
         error, failed = asyncio.run(scenario())
         self.assertTrue(error.retryable)
         failed.assert_not_awaited()
+
+    def test_customer_sync_skips_unassignment_when_platform_is_already_unassigned(self) -> None:
+        async def scenario() -> tuple[AsyncMock, AsyncMock]:
+            platform = SimpleNamespace(
+                device_customer_id=lambda _device: None,
+                unassign_customer=AsyncMock(),
+                assign_customer=AsyncMock(),
+            )
+            handlers = DeviceLifecycleHandlers(
+                object(), "worker-1", object(), object(), platform  # type: ignore[arg-type]
+            )
+            await handlers._sync_customer_assignment(
+                "service.jwt",
+                {"uuid": UUID("66666666-6666-4666-8666-666666666666")},
+                None,
+            )
+            return platform.unassign_customer, platform.assign_customer
+
+        unassign, assign = asyncio.run(scenario())
+        unassign.assert_not_awaited()
+        assign.assert_not_awaited()
+
+    def test_customer_sync_only_changes_a_different_platform_assignment(self) -> None:
+        async def scenario() -> tuple[AsyncMock, AsyncMock]:
+            platform = SimpleNamespace(
+                device_customer_id=lambda _device: UUID("77777777-7777-4777-8777-777777777777"),
+                unassign_customer=AsyncMock(),
+                assign_customer=AsyncMock(),
+            )
+            handlers = DeviceLifecycleHandlers(
+                object(), "worker-1", object(), object(), platform  # type: ignore[arg-type]
+            )
+            device = {"uuid": UUID("66666666-6666-4666-8666-666666666666")}
+            await handlers._sync_customer_assignment("service.jwt", device, None)
+            await handlers._sync_customer_assignment(
+                "service.jwt", device, UUID("88888888-8888-4888-8888-888888888888")
+            )
+            return platform.unassign_customer, platform.assign_customer
+
+        unassign, assign = asyncio.run(scenario())
+        unassign.assert_awaited_once_with(
+            "service.jwt", UUID("66666666-6666-4666-8666-666666666666")
+        )
+        assign.assert_awaited_once_with(
+            "service.jwt",
+            UUID("88888888-8888-4888-8888-888888888888"),
+            UUID("66666666-6666-4666-8666-666666666666"),
+        )
 
 
 if __name__ == "__main__":

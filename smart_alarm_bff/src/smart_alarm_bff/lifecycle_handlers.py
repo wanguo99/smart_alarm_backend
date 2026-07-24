@@ -202,6 +202,20 @@ class DeviceLifecycleHandlers:
         identity = self._service_identity(context)
         return await self._thingsboard.login(identity, context["thingsboard_tenant_id"])
 
+    async def _sync_customer_assignment(
+        self,
+        token: str,
+        device: dict[str, object],
+        desired_customer_id: UUID | None,
+    ) -> None:
+        current_customer_id = self._thingsboard.device_customer_id(device)
+        if current_customer_id == desired_customer_id:
+            return
+        if desired_customer_id is None:
+            await self._thingsboard.unassign_customer(token, device["uuid"])
+            return
+        await self._thingsboard.assign_customer(token, desired_customer_id, device["uuid"])
+
     async def _activate(self, event: OutboxEvent) -> None:
         context = await self._load(event)
         if (
@@ -319,12 +333,7 @@ class DeviceLifecycleHandlers:
         device = await self._thingsboard.get_device(session.token, context["thingsboard_device_id"])
         self._thingsboard.verify_device_uid(device, context["device_uid"])
         await self._thingsboard.update_label(session.token, device, context["display_name"])
-        if context["thingsboard_customer_id"] is None:
-            await self._thingsboard.unassign_customer(session.token, context["thingsboard_device_id"])
-        else:
-            await self._thingsboard.assign_customer(
-                session.token, context["thingsboard_customer_id"], context["thingsboard_device_id"],
-            )
+        await self._sync_customer_assignment(session.token, device, context["thingsboard_customer_id"])
         for relation in context["relations"]:
             if relation["status"] == "PENDING_DELETE":
                 await self._thingsboard.delete_relation(
@@ -390,7 +399,7 @@ class DeviceLifecycleHandlers:
             await self._thingsboard.delete_relation(
                 session.token, relation["thingsboard_asset_id"], context["thingsboard_device_id"],
             )
-        await self._thingsboard.unassign_customer(session.token, context["thingsboard_device_id"])
+        await self._sync_customer_assignment(session.token, device, None)
         self._device_secrets.delete(context["credential_secret_ref"])
 
         async with self._fenced_transaction(event) as connection:

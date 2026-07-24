@@ -10,7 +10,7 @@ from uuid import UUID
 import httpx
 
 from .policy import PolicyError
-from .thingsboard import ThingsBoardUser, normalize_username
+from .thingsboard import THINGSBOARD_NULL_UUID, ThingsBoardUser, normalize_username
 
 
 class PlatformAdminError(RuntimeError):
@@ -175,6 +175,14 @@ class ThingsBoardAdminClient:
         response = await self._authorized("POST", "/api/device", token, json=payload)
         self._expect(response, {200}, "thingsboard_device_update_failed")
         return _device(response.json())
+
+    @staticmethod
+    def device_customer_id(device: dict[str, object]) -> UUID | None:
+        customer = device.get("customerId")
+        if not isinstance(customer, dict) or customer.get("entityType") != "CUSTOMER":
+            raise PlatformAdminError("invalid_platform_device_response", retryable=False)
+        customer_id = _entity_uuid(customer)
+        return None if customer_id in {UUID(int=0), THINGSBOARD_NULL_UUID} else customer_id
 
     async def assign_customer(self, token: str, customer_id: UUID, device_id: UUID) -> None:
         response = await self._authorized("POST", f"/api/customer/{customer_id}/device/{device_id}", token)

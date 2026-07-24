@@ -37,6 +37,7 @@ def user_payload(*, authority: str = "TENANT_ADMIN", tenant_id: UUID = TENANT_ID
 def device_payload(name: str = "stc-device") -> dict[str, object]:
     return {
         "id": entity(DEVICE_ID, "DEVICE"),
+        "customerId": entity(UUID(int=0), "CUSTOMER"),
         "name": name,
         "label": "Lobby",
         "additionalInfo": {"smartAlarmDeviceUid": str(DEVICE_UID)},
@@ -177,6 +178,15 @@ class ThingsBoardAdminClientTest(unittest.TestCase):
         self.assertEqual(requests[3].url.path, f"/api/customer/device/{DEVICE_ID}")
         self.assertEqual(json.loads(requests[4].content)["from"], entity(ASSET_ID, "ASSET"))
         self.assertEqual(requests[5].url.params["relationTypeGroup"], "COMMON")
+
+    def test_device_customer_scope_is_strict_and_normalizes_null_uuid(self) -> None:
+        payload = device_payload()
+        self.assertIsNone(ThingsBoardAdminClient.device_customer_id(payload))
+        payload["customerId"] = entity(CUSTOMER_ID, "CUSTOMER")
+        self.assertEqual(ThingsBoardAdminClient.device_customer_id(payload), CUSTOMER_ID)
+        payload["customerId"] = entity(CUSTOMER_ID, "ASSET")
+        with self.assertRaisesRegex(PlatformAdminError, "invalid_platform_device_response"):
+            ThingsBoardAdminClient.device_customer_id(payload)
 
     def test_errors_do_not_expose_passwords_or_tokens(self) -> None:
         password = "extremely-sensitive-password"
