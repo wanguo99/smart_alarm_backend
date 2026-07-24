@@ -79,6 +79,7 @@ async def run_worker(settings: WorkerSettings, stop: asyncio.Event | None = None
                 settings.device_secret_key_version,
             ),
             thingsboard,
+            settings.max_attempts,
         )
         worker = OutboxWorker(settings, OutboxRepository(pool), handlers.mapping())
         LOGGER.info("worker started", extra={"worker_id": settings.worker_id})

@@ -116,6 +116,34 @@ class LifecycleHandlerContractTest(unittest.TestCase):
         self.assertTrue(error.retryable)
         failed.assert_not_awaited()
 
+    def test_last_retryable_attempt_publishes_terminal_business_state(self) -> None:
+        async def scenario() -> tuple[DeliveryError, AsyncMock]:
+            handlers = DeviceLifecycleHandlers(
+                object(), "worker-1", object(), object(), object(), max_attempts=3,  # type: ignore[arg-type]
+            )
+            failed = AsyncMock()
+            handlers._mark_failed = failed  # type: ignore[method-assign]
+
+            async def implementation(_event: OutboxEvent) -> None:
+                raise PlatformAdminError("thingsboard_unavailable", retryable=True)
+
+            try:
+                await handlers._run(replace(self.event(), attempts=3), "metadata", implementation)
+            except DeliveryError as error:
+                return error, failed
+            raise AssertionError("delivery error was not raised")
+
+        error, failed = asyncio.run(scenario())
+        self.assertFalse(error.retryable)
+        self.assertEqual(error.code, "thingsboard_unavailable")
+        failed.assert_awaited_once()
+
+    def test_handler_rejects_invalid_attempt_limit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max_attempts must be positive"):
+            DeviceLifecycleHandlers(
+                object(), "worker-1", object(), object(), object(), max_attempts=0,  # type: ignore[arg-type]
+            )
+
     def test_customer_sync_skips_unassignment_when_platform_is_already_unassigned(self) -> None:
         async def scenario() -> tuple[AsyncMock, AsyncMock]:
             platform = SimpleNamespace(

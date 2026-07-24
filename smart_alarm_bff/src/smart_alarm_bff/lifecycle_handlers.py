@@ -42,12 +42,16 @@ class DeviceLifecycleHandlers:
         secrets_provider: MountedSecretProvider,
         device_secrets: EncryptedFileSecretStore,
         thingsboard: ThingsBoardAdminClient,
+        max_attempts: int = 8,
     ) -> None:
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
         self._database = database
         self._worker_id = worker_id
         self._secrets = secrets_provider
         self._device_secrets = device_secrets
         self._thingsboard = thingsboard
+        self._max_attempts = max_attempts
 
     def mapping(self) -> dict[str, Callable[[OutboxEvent], Awaitable[None]]]:
         return {
@@ -76,15 +80,20 @@ class DeviceLifecycleHandlers:
         except DeliveryError:
             raise
         except PlatformAdminError as exc:
-            if not exc.retryable:
+            exhausted = exc.retryable and event.attempts >= self._max_attempts
+            if not exc.retryable or exhausted:
                 await self._mark_failed(event, lifecycle, exc.code)
-            raise DeliveryError(exc.code, retryable=exc.retryable) from exc
+            raise DeliveryError(exc.code, retryable=exc.retryable and not exhausted) from exc
         except LifecycleError as exc:
-            if not exc.retryable:
+            exhausted = exc.retryable and event.attempts >= self._max_attempts
+            if not exc.retryable or exhausted:
                 await self._mark_failed(event, lifecycle, exc.code)
-            raise DeliveryError(exc.code, retryable=exc.retryable) from exc
+            raise DeliveryError(exc.code, retryable=exc.retryable and not exhausted) from exc
         except SecretReferenceError as exc:
-            raise DeliveryError("lifecycle_secret_unavailable", retryable=True) from exc
+            exhausted = event.attempts >= self._max_attempts
+            if exhausted:
+                await self._mark_failed(event, lifecycle, "lifecycle_secret_unavailable")
+            raise DeliveryError("lifecycle_secret_unavailable", retryable=not exhausted) from exc
 
     def _event_identity(self, event: OutboxEvent) -> tuple[UUID, UUID, UUID]:
         if event.tenant_id is None or event.aggregate_type != "DEVICE":

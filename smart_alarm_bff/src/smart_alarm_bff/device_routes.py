@@ -11,8 +11,8 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 
 from .directory_routes import _scoped_connection
-from .policy import PolicyError
-from .session import SessionService
+from .policy import PolicyError, ProductPrincipal
+from .session import SessionError, SessionService
 from .write_routes import (
     WriteError,
     _audit,
@@ -28,6 +28,11 @@ from .write_routes import (
 
 
 _SERIAL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{5,63}$")
+_OPERATION_KINDS = {
+    "device-register": "register",
+    "device-update": "update",
+    "device-retire": "retire",
+}
 
 
 def _optional_uuid(value: object, field: str) -> UUID | None:
@@ -89,7 +94,252 @@ async def _validate_assignments(connection: Any, tenant_id: UUID, customer_id: U
             raise WriteError("group_scope_mismatch", 404)
 
 
+async def _read_guard(
+    request: Request,
+    sessions: SessionService,
+    database: Callable[[], Awaitable[Any]],
+    capability: str,
+) -> ProductPrincipal:
+    try:
+        context = await sessions.resolve(
+            await database(), request.cookies.get(sessions.cookie_name),
+        )
+        context.principal.require(capability)
+    except SessionError as exc:
+        raise WriteError(exc.code, exc.status_code) from exc
+    except PolicyError as exc:
+        raise WriteError("capability_required", 403) from exc
+    request.state.session_context = context
+    return context.principal
+
+
+def _operation_status(state: str) -> str:
+    if state in {"PENDING", "QUEUED", "OUTCOME_UNKNOWN"}:
+        return "PENDING"
+    return state
+
+
+def _public_operation(row: Any) -> dict[str, object]:
+    kind = _OPERATION_KINDS.get(row["operation_type"])
+    if kind is None:
+        raise WriteError("invalid_operation_state", 500)
+    status = _operation_status(row["state"])
+    retry_operation_id = row["retry_operation_id"]
+    lifecycle_retryable = (
+        (kind == "update" and row["device_lifecycle_state"] == "ACTIVE")
+        or (kind == "retire" and row["device_lifecycle_state"] == "RETIREMENT_FAILED")
+    )
+    return {
+        "operationId": str(row["id"]),
+        "requestId": row["idempotency_key"],
+        "deviceUid": row["resource_id"],
+        "kind": kind,
+        "status": status,
+        "errorCode": row["error_code"] if status == "FAILED" else None,
+        "createdAt": int(row["created_at"].timestamp() * 1000),
+        "updatedAt": int(row["updated_at"].timestamp() * 1000),
+        "retryOfOperationId": str(row["parent_operation_id"]) if row["parent_operation_id"] else None,
+        "retryOperationId": str(retry_operation_id) if retry_operation_id else None,
+        "retryable": status == "FAILED" and retry_operation_id is None
+        and not row["has_newer_operation"] and lifecycle_retryable,
+        "cancellable": False,
+    }
+
+
+def _retry_response(operation: Any, device: Any) -> dict[str, object]:
+    state = operation["state"]
+    status = "QUEUED" if state in {"PENDING", "QUEUED", "OUTCOME_UNKNOWN"} else state
+    result: dict[str, object] = {"device": _public_device(device)}
+    if status == "FAILED":
+        result["error"] = {"code": operation["error_code"] or "operation_failed"}
+    return {"operationId": str(operation["id"]), "status": status, "result": result}
+
+
 def register_device_routes(router: APIRouter, sessions: SessionService, database: Callable[[], Awaitable[Any]]) -> None:
+    @router.get("/api/v1/device-management/operations")
+    async def list_device_operations(request: Request):
+        try:
+            principal = await _read_guard(request, sessions, database, "devices:read")
+            tenant_id, customer_scope = _tenant_scope(principal)
+            device_uid = UUID(request.query_params.get("deviceUid", ""))
+            try:
+                limit = int(request.query_params.get("limit", "100"))
+            except ValueError as exc:
+                raise WriteError("invalid_limit") from exc
+            if not 1 <= limit <= 200:
+                raise WriteError("invalid_limit")
+            async with _scoped_connection(await database(), principal) as connection:
+                device = await connection.fetchrow(
+                    "SELECT id, lifecycle_state FROM smart_alarm.devices WHERE tenant_id = $1 AND device_uid = $2 AND ($3::uuid IS NULL OR customer_id = $3)",
+                    tenant_id, device_uid, customer_scope,
+                )
+                if device is None:
+                    raise WriteError("not_found", 404)
+                rows = await connection.fetch(
+                    """
+                    SELECT o.*, retry.id AS retry_operation_id,
+                           EXISTS (
+                               SELECT 1 FROM smart_alarm.operations newer
+                               WHERE newer.tenant_id = o.tenant_id
+                                 AND newer.resource_type = o.resource_type
+                                 AND newer.resource_id = o.resource_id
+                                 AND newer.operation_type = o.operation_type
+                                 AND (newer.created_at, newer.id) > (o.created_at, o.id)
+                           ) AS has_newer_operation
+                    FROM smart_alarm.operations o
+                    LEFT JOIN smart_alarm.operations retry ON retry.parent_operation_id = o.id
+                    WHERE o.tenant_id = $1 AND o.resource_type = 'DEVICE'
+                      AND o.resource_id = $2
+                      AND o.operation_type = ANY($3::text[])
+                    ORDER BY o.created_at DESC, o.id DESC
+                    LIMIT $4
+                    """,
+                    tenant_id, str(device_uid), list(_OPERATION_KINDS), limit,
+                )
+            data = [_public_operation({
+                **dict(row),
+                "device_lifecycle_state": device["lifecycle_state"],
+            }) for row in rows]
+            return {"data": data, "totalElements": len(data), "limit": limit}
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("invalid_request"))
+
+    @router.post("/api/v1/device-management/operations/{operation_id}/retry")
+    async def retry_device_operation(operation_id: str, request: Request):
+        try:
+            principal = await _guard(request, sessions, database, "devices:read")
+            tenant_id, customer_scope = _tenant_scope(principal)
+            parent_id = UUID(operation_id)
+            async with _scoped_connection(await database(), principal) as connection:
+                parent = await connection.fetchrow(
+                    """
+                    SELECT o.*, d.id AS device_id, d.device_uid, d.customer_id AS device_customer_id,
+                           d.asset_id, d.lifecycle_state,
+                           EXISTS (
+                               SELECT 1 FROM smart_alarm.operations newer
+                               WHERE newer.tenant_id = o.tenant_id
+                                 AND newer.resource_type = o.resource_type
+                                 AND newer.resource_id = o.resource_id
+                                 AND newer.operation_type = o.operation_type
+                                 AND (newer.created_at, newer.id) > (o.created_at, o.id)
+                           ) AS has_newer_operation
+                    FROM smart_alarm.operations o
+                    JOIN smart_alarm.devices d
+                      ON d.tenant_id = o.tenant_id AND d.device_uid::text = o.resource_id
+                    WHERE o.id = $1 AND o.tenant_id = $2 AND o.resource_type = 'DEVICE'
+                      AND o.operation_type = ANY($3::text[])
+                      AND ($4::uuid IS NULL OR d.customer_id = $4)
+                    FOR UPDATE OF o, d
+                    """,
+                    parent_id, tenant_id, list(_OPERATION_KINDS), customer_scope,
+                )
+                if parent is None:
+                    raise WriteError("not_found", 404)
+                kind = _OPERATION_KINDS[parent["operation_type"]]
+                if kind == "update":
+                    principal.require("devices:metadata:update")
+                    principal.require("devices:assignment:update")
+                elif kind == "retire":
+                    principal.require("devices:retire")
+                else:
+                    raise WriteError("operation_not_retryable", 409)
+
+                existing = await connection.fetchrow(
+                    "SELECT * FROM smart_alarm.operations WHERE parent_operation_id = $1",
+                    parent_id,
+                )
+                device = await _device_row(connection, tenant_id, parent["device_uid"])
+                if existing is not None:
+                    return _retry_response(existing, device)
+                if parent["state"] != "FAILED":
+                    raise WriteError("operation_not_retryable", 409)
+                if parent["has_newer_operation"]:
+                    raise WriteError("operation_superseded", 409)
+                if kind == "update" and parent["lifecycle_state"] != "ACTIVE":
+                    raise WriteError("device_not_editable", 409)
+                if kind == "retire" and parent["lifecycle_state"] != "RETIREMENT_FAILED":
+                    raise WriteError("device_not_retirable", 409)
+
+                retry_key = f"retry-{parent_id}"
+                retry = await connection.fetchrow(
+                    """
+                    INSERT INTO smart_alarm.operations (
+                        tenant_id, customer_id, actor_user_id, operation_type, resource_type,
+                        resource_id, idempotency_key, request_hash, state, parent_operation_id
+                    ) VALUES ($1, $2, $3, $4, 'DEVICE', $5, $6, $7, 'PENDING', $8)
+                    RETURNING *
+                    """,
+                    tenant_id, principal.internal_customer_id, principal.local_user_id,
+                    parent["operation_type"], str(parent["device_uid"]), retry_key,
+                    parent["request_hash"], parent_id,
+                )
+                if kind == "update":
+                    await connection.execute(
+                        """
+                        UPDATE smart_alarm.entity_relations
+                        SET status = CASE WHEN from_id = $3 THEN 'PENDING_CREATE' ELSE 'PENDING_DELETE' END,
+                            updated_at = clock_timestamp(), version = version + 1
+                        WHERE tenant_id = $1 AND to_type = 'DEVICE' AND to_id = $2
+                          AND relation_type = 'Contains' AND status = 'ERROR'
+                        """,
+                        tenant_id, parent["device_id"], parent["asset_id"],
+                    )
+                    if parent["asset_id"] is not None:
+                        await connection.execute(
+                            """
+                            INSERT INTO smart_alarm.entity_relations (
+                                tenant_id, from_type, from_id, to_type, to_id, relation_type, status
+                            ) VALUES ($1, 'ASSET', $2, 'DEVICE', $3, 'Contains', 'PENDING_CREATE')
+                            ON CONFLICT (tenant_id, from_type, from_id, to_type, to_id, relation_type)
+                            DO UPDATE SET status = CASE
+                                    WHEN smart_alarm.entity_relations.status = 'ACTIVE' THEN 'ACTIVE'
+                                    ELSE 'PENDING_CREATE'
+                                END,
+                                updated_at = clock_timestamp(),
+                                version = smart_alarm.entity_relations.version + 1
+                            """,
+                            tenant_id, parent["asset_id"], parent["device_id"],
+                        )
+                    event_type = "device.metadata.sync.requested"
+                else:
+                    await connection.execute(
+                        """
+                        UPDATE smart_alarm.devices
+                        SET lifecycle_state = 'RETIRING', updated_at = clock_timestamp(), version = version + 1
+                        WHERE tenant_id = $1 AND id = $2 AND lifecycle_state = 'RETIREMENT_FAILED'
+                        """,
+                        tenant_id, parent["device_id"],
+                    )
+                    event_type = "device.retirement.requested"
+                await _outbox(
+                    connection, tenant_id, "DEVICE", str(parent["device_id"]), event_type,
+                    {
+                        "operationId": str(retry["id"]),
+                        "deviceId": str(parent["device_id"]),
+                        "deviceUid": str(parent["device_uid"]),
+                        "retryOfOperationId": str(parent_id),
+                    },
+                )
+                device = await _device_row(connection, tenant_id, parent["device_uid"])
+                queued = {
+                    "operationId": str(retry["id"]),
+                    "kind": kind,
+                    "status": "QUEUED",
+                    "result": {"device": _public_device(device)},
+                }
+                await _queue_operation(connection, retry["id"], queued, str(parent["device_uid"]))
+                await _audit(
+                    connection, principal, retry_key, "DEVICE_OPERATION_RETRY_ACCEPTED", "DEVICE",
+                    str(parent["device_uid"]), {"operationId": str(retry["id"]), "retryOfOperationId": str(parent_id)},
+                    "ACCEPTED",
+                )
+                retry = {**dict(retry), "state": "QUEUED", "error_code": None}
+            return _retry_response(retry, device)
+        except PolicyError as exc:
+            return _write_error(WriteError("capability_required", 403))
+        except (WriteError, ValueError) as exc:
+            return _write_error(exc if isinstance(exc, WriteError) else WriteError("invalid_request"))
+
     @router.post("/api/v1/device-management/devices")
     async def register_device(request: Request, body: dict[str, object]):
         try:
