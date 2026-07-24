@@ -29,8 +29,9 @@ class Result:
 
 
 class Connection:
-    def __init__(self, row=None) -> None:
+    def __init__(self, row=None, *, inserted=True) -> None:
         self.row = row
+        self.inserted = inserted
         self.statements: list[tuple[str, object]] = []
 
     def transaction(self):
@@ -38,7 +39,9 @@ class Connection:
 
     def execute(self, statement, parameters=None):
         self.statements.append((statement, parameters))
-        return Result(self.row if statement.lstrip().startswith("SELECT") else None)
+        if statement.lstrip().startswith("INSERT"):
+            return Result((1,) if self.inserted else None)
+        return Result(self.row)
 
 
 class InventoryImportTest(unittest.TestCase):
@@ -111,7 +114,7 @@ class InventoryImportTest(unittest.TestCase):
             None,
         )
         repeated = import_inventory_records(
-            Connection(row),
+            Connection(row, inserted=False),
             [record],
             factory_batch="simulator-local",
             hardware_model="smart-alarm-simulator",
@@ -119,7 +122,7 @@ class InventoryImportTest(unittest.TestCase):
         self.assertEqual(repeated, {"inserted": 0, "existing": 1, "total": 1})
         with self.assertRaisesRegex(ValueError, "conflict"):
             import_inventory_records(
-                Connection((*row[:4], "different-batch", *row[5:])),
+                Connection((*row[:4], "different-batch", *row[5:]), inserted=False),
                 [record],
                 factory_batch="simulator-local",
                 hardware_model="smart-alarm-simulator",

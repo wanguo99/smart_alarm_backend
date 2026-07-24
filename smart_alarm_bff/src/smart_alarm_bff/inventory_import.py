@@ -147,38 +147,14 @@ def import_inventory_records(
     inserted = existing = 0
     with connection.transaction():
         for record in records:
-            current = connection.execute(
-                """
-                SELECT device_uid, serial_number, claim_token_hash, claim_expires_at,
-                       factory_batch, hardware_model, status, claim_consumed_at
-                FROM smart_alarm.device_inventory
-                WHERE device_uid = %s OR serial_number = %s
-                FOR UPDATE
-                """,
-                (record.device_uid, record.serial_number),
-            ).fetchone()
-            if current is not None:
-                expected = (
-                    record.device_uid,
-                    record.serial_number,
-                    record.claim_token_hash,
-                    record.claim_expires_at,
-                    factory_batch,
-                    hardware_model,
-                    "UNCLAIMED",
-                    None,
-                )
-                normalized = tuple(current)
-                if normalized != expected:
-                    raise ValueError(f"inventory identity conflict for deviceUid {record.device_uid}")
-                existing += 1
-                continue
-            connection.execute(
+            created = connection.execute(
                 """
                 INSERT INTO smart_alarm.device_inventory
                     (device_uid, serial_number, claim_token_hash, claim_expires_at,
                      factory_batch, hardware_model)
                 VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+                RETURNING 1
                 """,
                 (
                     record.device_uid,
@@ -188,8 +164,32 @@ def import_inventory_records(
                     factory_batch,
                     hardware_model,
                 ),
+            ).fetchone()
+            if created is not None:
+                inserted += 1
+                continue
+            current = connection.execute(
+                """
+                SELECT device_uid, serial_number, claim_token_hash, claim_expires_at,
+                       factory_batch, hardware_model, status, claim_consumed_at
+                FROM smart_alarm.device_inventory
+                WHERE device_uid = %s OR serial_number = %s
+                """,
+                (record.device_uid, record.serial_number),
+            ).fetchone()
+            expected = (
+                record.device_uid,
+                record.serial_number,
+                record.claim_token_hash,
+                record.claim_expires_at,
+                factory_batch,
+                hardware_model,
+                "UNCLAIMED",
+                None,
             )
-            inserted += 1
+            if current is None or tuple(current) != expected:
+                raise ValueError(f"inventory identity conflict for deviceUid {record.device_uid}")
+            existing += 1
     return {"inserted": inserted, "existing": existing, "total": len(records)}
 
 
