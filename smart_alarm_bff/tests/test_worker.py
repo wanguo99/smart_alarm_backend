@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
 from smart_alarm_bff.secret_provider import EncryptedFileSecretStore, MountedSecretProvider, SecretReferenceError
 from smart_alarm_bff.worker import DeliveryError, OutboxEvent, OutboxRepository, OutboxWorker, retry_delay
 from smart_alarm_bff.worker_config import WorkerSettings
+from smart_alarm_bff.worker_main import run_worker
 
 
 class WorkerConfigTest(unittest.TestCase):
@@ -44,14 +47,51 @@ class WorkerConfigTest(unittest.TestCase):
                 "SMART_ALARM_WORKER_MAX_ATTEMPTS": "8",
                 "SMART_ALARM_WORKER_INITIAL_BACKOFF_SECONDS": "2",
                 "SMART_ALARM_WORKER_MAX_BACKOFF_SECONDS": "60",
+                "SMART_ALARM_WORKER_METRICS_PORT": "9464",
             }
             settings = WorkerSettings.from_env(env)
             self.assertEqual(settings.database_user, "smart_alarm_worker")
+            self.assertTrue(settings.database_tls)
             self.assertNotIn("worker-password-value", repr(settings))
             with self.assertRaisesRegex(ValueError, "lower than the lease"):
                 WorkerSettings.from_env({**env, "SMART_ALARM_WORKER_HANDLER_TIMEOUT_SECONDS": "30"})
             with self.assertRaisesRegex(ValueError, "exactly 32 bytes"):
                 WorkerSettings.from_env({**env, "SMART_ALARM_DEVICE_SECRET_KEY": "k" * 33})
+
+    def test_local_worker_accepts_only_loopback_plaintext_dependencies(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = {
+                "SMART_ALARM_ENVIRONMENT": "local",
+                "SMART_ALARM_DEPLOYMENT_COMMIT": "abcdef1",
+                "SMART_ALARM_WORKER_ID": "local-worker-1",
+                "TB_HTTP_URL": "http://127.0.0.1:9090",
+                "SMART_ALARM_DATABASE_HOST": "127.0.0.1",
+                "SMART_ALARM_DATABASE_PORT": "55432",
+                "SMART_ALARM_DATABASE_NAME": "smart_alarm",
+                "SMART_ALARM_WORKER_DATABASE_USER": "smart_alarm_worker",
+                "SMART_ALARM_WORKER_DATABASE_PASSWORD": "local-password",
+                "SMART_ALARM_WORKER_SECRET_ROOT": str(root),
+                "SMART_ALARM_DEVICE_SECRET_ROOT": str(root),
+                "SMART_ALARM_DEVICE_SECRET_KEY": "k" * 32,
+                "SMART_ALARM_DEVICE_SECRET_KEY_VERSION": "1",
+                "SMART_ALARM_WORKER_BATCH_SIZE": "10",
+                "SMART_ALARM_WORKER_POLL_INTERVAL_MS": "500",
+                "SMART_ALARM_WORKER_LEASE_SECONDS": "30",
+                "SMART_ALARM_WORKER_HANDLER_TIMEOUT_SECONDS": "20",
+                "SMART_ALARM_WORKER_MAX_ATTEMPTS": "8",
+                "SMART_ALARM_WORKER_INITIAL_BACKOFF_SECONDS": "2",
+                "SMART_ALARM_WORKER_MAX_BACKOFF_SECONDS": "60",
+                "SMART_ALARM_WORKER_METRICS_PORT": "9464",
+            }
+            settings = WorkerSettings.from_env(env)
+            self.assertFalse(settings.database_tls)
+            self.assertIsNone(settings.database_ca_file)
+            self.assertIsNone(settings.thingsboard_ca_file)
+            with self.assertRaisesRegex(ValueError, "loopback"):
+                WorkerSettings.from_env({**env, "SMART_ALARM_DATABASE_HOST": "postgres.internal"})
+            with self.assertRaisesRegex(ValueError, "loopback HTTP"):
+                WorkerSettings.from_env({**env, "TB_HTTP_URL": "http://thingsboard:9090"})
 
 
 class MountedSecretProviderTest(unittest.TestCase):
@@ -134,6 +174,7 @@ class WorkerKernelTest(unittest.TestCase):
             database_user="worker",
             database_password=b"password-password",
             database_ca_file=Path("/ca"),
+            database_tls=True,
             secret_root=Path("/secrets"),
             device_secret_root=Path("/device-secrets"),
             device_secret_key=b"k" * 32,
@@ -145,6 +186,7 @@ class WorkerKernelTest(unittest.TestCase):
             max_attempts=max_attempts,
             initial_backoff_seconds=2,
             max_backoff_seconds=60,
+            metrics_port=9464,
         )
 
     def test_backoff_is_exponential_and_capped(self) -> None:
@@ -250,3 +292,40 @@ class WorkerKernelTest(unittest.TestCase):
         self.assertTrue(any("FOR UPDATE SKIP LOCKED" in statement for statement in statements))
         self.assertTrue(any("lease_token = $3" in statement for statement in statements))
         self.assertGreaterEqual(sum("smart_alarm.system_scope" in statement for statement in statements), 2)
+
+    def test_worker_process_registers_handlers_and_closes_dependencies(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = replace(
+                self.settings(),
+                secret_root=root,
+                device_secret_root=root,
+                database_ca_file=None,
+                database_tls=False,
+                thingsboard_ca_file=None,
+                metrics_port=19464,
+            )
+            pool = MagicMock()
+            pool.close = AsyncMock()
+            thingsboard = MagicMock()
+            thingsboard.close = AsyncMock()
+            metrics_server = MagicMock()
+            metrics_thread = MagicMock()
+            stop = asyncio.Event()
+            stop.set()
+
+            with (
+                patch("smart_alarm_bff.worker_main.asyncpg.create_pool", new=AsyncMock(return_value=pool)),
+                patch("smart_alarm_bff.worker_main.ThingsBoardAdminClient", return_value=thingsboard),
+                patch(
+                    "smart_alarm_bff.worker_main.start_http_server",
+                    return_value=(metrics_server, metrics_thread),
+                ),
+            ):
+                asyncio.run(run_worker(settings, stop))
+
+            pool.close.assert_awaited_once()
+            thingsboard.close.assert_awaited_once()
+            metrics_server.shutdown.assert_called_once()
+            metrics_server.server_close.assert_called_once()
+            metrics_thread.join.assert_called_once_with(timeout=5)

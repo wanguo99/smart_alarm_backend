@@ -28,6 +28,7 @@ test = [
 smart-alarm-bff = "smart_alarm_bff.main:run"
 smart-alarm-bootstrap-system-user = "smart_alarm_bff.bootstrap:run"
 smart-alarm-migrate = "smart_alarm_bff.migrate:run"
+smart-alarm-worker = "smart_alarm_bff.worker_main:run"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -69,11 +69,12 @@ def _device(payload: object) -> dict[str, object]:
 
 
 class ThingsBoardAdminClient:
-    def __init__(self, base_url: str, ca_file: Path | str, *, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(self, base_url: str, ca_file: Path | str | bool, *, client: httpx.AsyncClient | None = None) -> None:
         self._owned = client is None
+        verify = str(ca_file) if isinstance(ca_file, Path) else ca_file
         self._client = client or httpx.AsyncClient(
             base_url=base_url,
-            verify=str(ca_file),
+            verify=verify,
             timeout=httpx.Timeout(8),
             follow_redirects=False,
         )
